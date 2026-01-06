@@ -15,6 +15,8 @@ The project is divided into three main layers to separate business logic from im
 The "Source of Truth". Pure logic, no side effects.
 *   **Resource**: An enum representing a system component (e.g., `File`).
     *   Each resource has a unique `id` (e.g., `File[/etc/motd]`) and a list of `dependencies`.
+    *   **backup**: Boolean flag to enable/disable state snapshotting (default: `true`).
+    *   **max_backup_size**: Optional limit in bytes for content snapshots.
 *   **Ensure**: Enum for desired state (`Present`, `Absent`).
 *   **ResourceProvider (Port)**: An `async_trait` that must be implemented by Infrastructure adapters.
 
@@ -36,7 +38,9 @@ Resources are defined using Rhai Object Maps (`#{...}`) for readability.
 ```rust
 file("/etc/motd", #{
     ensure: "present",
-    content: "Welcome!"
+    content: "Welcome!",
+    backup: true,
+    max_backup_size: 1024 * 1024 // 1MB limit
 });
 ```
 
