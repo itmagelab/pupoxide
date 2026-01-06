@@ -53,6 +53,19 @@ Apply all manifests from a specific environment using the Puppet-like directory 
 cargo run -- --config ./examples apply --environment production
 ```
 
+### 3. Client-Server Mode
+Pupoxide can operate in a Master/Agent architecture.
+
+**Start the Master Server:**
+```bash
+cargo run -- --config ./examples master --port 8080
+```
+
+**Run the Agent:**
+```bash
+cargo run -- --config ./examples agent --server http://localhost:8080 --node my-node --environment production
+```
+
 ## Example Manifest (`site.rhai`)
 
 Pupoxide uses Rhai with a custom DSL. Resources are defined using object maps, and dependencies can be expressed using the `require` attribute or the arrow operator `->`.

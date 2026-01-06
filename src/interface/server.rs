@@ -28,13 +28,18 @@ pub async fn start_master(state: MasterState, port: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+
 async fn get_catalog(
     Path((env, node)): Path<(String, String)>,
     State(state): State<Arc<MasterState>>,
     Json(facts): Json<Facts>,
-) -> Json<Catalog> {
+) -> Result<Json<Catalog>, ServerError> {
     // 1. Find manifest
-    let manifest_path = state.loader.get_site_manifest(&env).expect("Manifest not found");
+    let manifest_path = state.loader.get_site_manifest(&env)
+        .map_err(|e| ServerError(StatusCode::NOT_FOUND, e.to_string()))?;
+    
     let modules_path = state.loader.get_modules_path(&env);
 
     // 2. Compile catalog
@@ -44,7 +49,15 @@ async fn get_catalog(
         node,
         env,
         facts
-    ).expect("Failed to compile catalog");
+    ).map_err(|e| ServerError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Json(catalog)
+    Ok(Json(catalog))
+}
+
+struct ServerError(StatusCode, String);
+
+impl IntoResponse for ServerError {
+    fn into_response(self) -> Response {
+        (self.0, self.1).into_response()
+    }
 }
