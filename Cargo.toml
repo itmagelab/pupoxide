@@ -15,3 +15,9 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 validator = { version = "0.19", features = ["derive"] }
 clap = { version = "4", features = ["derive", "env"] }
+async-trait = "0.1"
+rhai = "1.19"
+
+[dev-dependencies]
+tempfile = "3"
+
