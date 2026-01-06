@@ -1,4 +1,4 @@
-use rhai::{Engine, Scope, Dynamic, Map};
+use rhai::{Engine, Scope, Dynamic, Map, NativeCallContext};
 use std::path::PathBuf;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -14,6 +14,7 @@ struct SharedCollector {
 pub struct PupoxideEngine {
     engine: Engine,
     collector: SharedCollector,
+    module_path: Rc<RefCell<Option<PathBuf>>>,
 }
 
 impl PupoxideEngine {
@@ -22,6 +23,7 @@ impl PupoxideEngine {
         let collector = SharedCollector {
             resources: Rc::new(RefCell::new(Vec::new())),
         };
+        let module_path: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(None));
 
         // Register Resource type
         engine.register_type_with_name::<Resource>("Resource");
@@ -85,24 +87,46 @@ impl PupoxideEngine {
         });
 
         let c2 = collector.clone();
-        // Register the -> operator
-        // We register it as a custom operator name "->". 
-        // Rhai allows this via register_custom_operator + register_fn.
         engine.register_custom_operator("->", 60).unwrap();
         engine.register_fn("->", move |lhs: Resource, rhs: Resource| {
             let mut resources = c2.resources.borrow_mut();
-            // Find rhs in collected resources and add lhs as dependency
             if let Some(res) = resources.iter_mut().find(|r| r.id() == rhs.id()) {
                 res.add_dependency(lhs.id().to_string());
             }
             rhs
         });
 
-        Self { engine, collector }
+        // Register 'include' function
+        let m_path = module_path.clone();
+        engine.register_fn("include", move |ctx: NativeCallContext, name: String| -> std::result::Result<Dynamic, Box<rhai::EvalAltResult>> {
+            let base = m_path.borrow();
+            if let Some(ref bp) = *base {
+                let init_path = bp.join(&name).join("manifests").join("init.rhai");
+                if init_path.exists() {
+                    // Evaluate the included file in the same engine context
+                    let _ = ctx.engine().eval_file::<Dynamic>(init_path).map_err(|e| {
+                        Box::new(rhai::EvalAltResult::ErrorRuntime(
+                            format!("Failed to include module '{}': {}", name, e).into(),
+                            rhai::Position::NONE,
+                        ))
+                    })?;
+                    return Ok(Dynamic::TRUE);
+                }
+            }
+            Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
+                format!("Module {} not found", name).into(),
+                rhai::Position::NONE,
+            )))
+        });
+
+        Self { engine, collector, module_path }
+    }
+
+    pub fn set_module_path(&self, path: PathBuf) {
+        *self.module_path.borrow_mut() = Some(path);
     }
 
     pub fn run_manifest(&self, path: PathBuf) -> Result<Vec<Resource>> {
-        // Clear previous run
         self.collector.resources.borrow_mut().clear();
 
         let mut scope = Scope::new();
@@ -114,6 +138,11 @@ impl PupoxideEngine {
 
         let resources = self.collector.resources.borrow().clone();
         self.sort_resources(resources)
+    }
+
+    pub fn run_manifest_with_modules(&self, path: PathBuf, module_path: PathBuf) -> Result<Vec<Resource>> {
+        self.set_module_path(module_path);
+        self.run_manifest(path)
     }
 
     /// Performs topological sort of resources based on dependencies

@@ -51,3 +51,49 @@ async fn test_environment_loading_and_execution() {
     let content = fs::read_to_string(&target_file).unwrap();
     assert_eq!(content, "Config from simplified Rhai!");
 }
+
+#[tokio::test]
+async fn test_module_inclusion() {
+    let base_dir = tempdir().unwrap();
+    let env_dir = base_dir.path().join("environments").join("prod");
+    let modules_dir = env_dir.join("modules");
+    let module_manifest_dir = modules_dir.join("test_mod").join("manifests");
+    let site_manifest_dir = env_dir.join("manifests");
+
+    fs::create_dir_all(&module_manifest_dir).unwrap();
+    fs::create_dir_all(&site_manifest_dir).unwrap();
+
+    let target_file = base_dir.path().join("module_result.txt");
+    let target_file_str = target_file.to_str().unwrap();
+
+    // 1. Create module manifest
+    let module_script = format!(
+        r#"file("{target_file_str}", #{{ ensure: "present", content: "from module" }});"#
+    );
+    fs::write(module_manifest_dir.join("init.rhai"), module_script).unwrap();
+
+    // 2. Create site manifest that includes the module
+    let site_script = r#"include("test_mod");"#;
+    let site_rhai = site_manifest_dir.join("site.rhai");
+    fs::write(&site_rhai, site_script).unwrap();
+
+    // 3. Execute
+    let loader = EnvironmentLoader::new(base_dir.path().to_path_buf());
+    let engine = PupoxideEngine::new();
+    let resources = engine.run_manifest_with_modules(
+        site_rhai,
+        loader.get_modules_path("prod")
+    ).unwrap();
+
+    // 4. Verify
+    assert_eq!(resources.len(), 1);
+    assert_eq!(resources[0].id(), format!("File[{}]", target_file_str));
+    
+    let adapter = FsAdapter;
+    for res in resources {
+        adapter.apply(&res).await.unwrap();
+    }
+    
+    assert!(target_file.exists());
+    assert_eq!(fs::read_to_string(&target_file).unwrap(), "from module");
+}

@@ -32,4 +32,18 @@ impl EnvironmentLoader {
             .join(env_name)
             .join("modules")
     }
+
+    /// Finds a module's entry point (init.rhai)
+    pub fn get_module_manifest(&self, env_name: &str, module_name: &str) -> Result<PathBuf> {
+        let path = self.get_modules_path(env_name)
+            .join(module_name)
+            .join("manifests")
+            .join("init.rhai");
+
+        if path.exists() {
+            Ok(path)
+        } else {
+            Err(DomainError::Internal(format!("Module '{}' not found at: {}", module_name, path.display())))
+        }
+    }
 }
