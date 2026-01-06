@@ -42,4 +42,10 @@ pub enum Commands {
         #[arg(short, long)]
         environment: String,
     },
+    /// Rollback a previous transaction
+    Rollback {
+        /// ID of the transaction to rollback (optional, defaults to latest)
+        #[arg(short, long)]
+        transaction_id: Option<String>,
+    },
 }

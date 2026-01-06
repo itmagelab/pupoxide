@@ -85,11 +85,16 @@ impl PupoxideEngine {
                 }
             }
 
+            let backup = params.get("backup")
+                .and_then(|v| v.clone().try_cast::<bool>())
+                .unwrap_or(true);
+
             let resource = Resource::Directory(crate::domain::resource::DirectoryResource {
                 id: format!("Directory[{}]", path),
                 path: PathBuf::from(path),
                 ensure,
                 dependencies,
+                backup,
             });
 
             exec_ctx.resources.lock().unwrap().push(resource.clone());
@@ -155,12 +160,27 @@ impl PupoxideEngine {
                 }
             }
 
+            let backup = params.get("backup")
+                .and_then(|v| v.clone().try_cast::<bool>())
+                .unwrap_or(true);
+
+            let max_backup_size = params.get("max_backup_size")
+                .and_then(|v| {
+                    if let Some(i) = v.clone().try_cast::<i64>() {
+                        Some(i as u64)
+                    } else {
+                        v.clone().try_cast::<u64>()
+                    }
+                });
+
             let resource = Resource::File(FileResource {
                 id: format!("File[{}]", path),
                 path: PathBuf::from(path),
                 ensure,
                 content,
                 dependencies,
+                backup,
+                max_backup_size,
             });
 
             exec_ctx.resources.lock().unwrap().push(resource.clone());

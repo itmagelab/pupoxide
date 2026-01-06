@@ -14,6 +14,8 @@ macro_rules! file {
             ensure: $ensure,
             content: Some($content.to_string()),
             dependencies: vec![],
+            backup: true,
+            max_backup_size: None,
         })
     };
     ($path:expr => { ensure: $ensure:expr }) => {
@@ -23,6 +25,8 @@ macro_rules! file {
             ensure: $ensure,
             content: None,
             dependencies: vec![],
+            backup: true,
+            max_backup_size: None,
         })
     };
 }

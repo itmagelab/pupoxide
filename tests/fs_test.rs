@@ -21,8 +21,8 @@ async fn test_file_resource_present() {
     let resource = &manifest[0];
     
     // 1. Initial state should be absent
-    let state = adapter.get_state(resource).await.expect("Failed to get state");
-    assert_eq!(state, Ensure::Absent);
+    let state = adapter.get_state(resource, false).await.expect("Failed to get state");
+    assert_eq!(state, pupoxide::domain::resource::ResourceState::Ensure(Ensure::Absent));
 
     // 2. Apply resource
     adapter.apply(resource).await.expect("Failed to apply");
@@ -50,8 +50,8 @@ async fn test_file_resource_absent() {
     let resource = &manifest[0];
     
     // 1. Initial state (it exists)
-    let state = adapter.get_state(resource).await.expect("Failed to get state");
-    assert_eq!(state, Ensure::Present);
+    let state = adapter.get_state(resource, false).await.expect("Failed to get state");
+    assert_eq!(state, pupoxide::domain::resource::ResourceState::Ensure(Ensure::Present));
 
     // 2. Apply resource (delete)
     adapter.apply(resource).await.expect("Failed to apply");

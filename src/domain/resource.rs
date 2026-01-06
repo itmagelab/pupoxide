@@ -15,13 +15,33 @@ impl Default for Ensure {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, validator::Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ResourceState {
+    Ensure(Ensure),
+    /// Current state including content (used for backups)
+    Full {
+        ensure: Ensure,
+        content: Option<Vec<u8>>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum RollbackStatus {
+    Success,
+    Failed(String),
+    SkippedNoBackup,
+    Pending,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, validator::Validate, PartialEq)]
 pub struct FileResource {
     pub id: String,
     pub path: PathBuf,
     pub ensure: Ensure,
     pub content: Option<String>,
     pub dependencies: Vec<String>,
+    pub backup: bool,
+    pub max_backup_size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -44,6 +64,7 @@ pub struct DirectoryResource {
     pub path: PathBuf,
     pub ensure: Ensure,
     pub dependencies: Vec<String>,
+    pub backup: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,8 +117,9 @@ impl Resource {
 /// Every adapter (Infrastructure) must implement this to handle specific resource types.
 #[async_trait::async_trait]
 pub trait ResourceProvider: Send + Sync {
-    /// Returns the current state of the resource on the system
-    async fn get_state(&self, resource: &Resource) -> Result<Ensure>;
+    /// Returns the current state of the resource on the system.
+    /// If full is true, the provider SHOULD attempt to return the full content for backup.
+    async fn get_state(&self, resource: &Resource, full: bool) -> Result<ResourceState>;
     
     /// Applies the desired state to the system
     async fn apply(&self, resource: &Resource) -> Result<()>;

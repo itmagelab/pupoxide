@@ -1,24 +1,38 @@
 use std::fs;
 use std::io::Write;
 use async_trait::async_trait;
-use crate::domain::resource::{Resource, ResourceProvider, Ensure, FileResource};
+use crate::domain::resource::{Resource, ResourceProvider, Ensure, FileResource, ResourceState};
 use crate::domain::error::{DomainError, Result};
 
 pub struct FsAdapter;
 
 #[async_trait]
 impl ResourceProvider for FsAdapter {
-    async fn get_state(&self, resource: &Resource) -> Result<Ensure> {
+    async fn get_state(&self, resource: &Resource, full: bool) -> Result<ResourceState> {
         match resource {
-            Resource::File(file) => self.get_file_state(file).await,
-            Resource::Directory(dir) => {
-                if dir.path.exists() && dir.path.is_dir() {
-                    Ok(Ensure::Present)
+            Resource::File(file) => {
+                let physical_exists = file.path.exists() && !file.path.is_dir();
+                
+                if full && physical_exists {
+                    let content = fs::read(&file.path).ok();
+                    Ok(ResourceState::Full { 
+                        ensure: Ensure::Present, 
+                        content 
+                    })
                 } else {
-                    Ok(Ensure::Absent)
+                    let ensure = self.get_file_ensure(file).await?;
+                    Ok(ResourceState::Ensure(ensure))
                 }
             }
-            Resource::Meta(_) => Ok(Ensure::Present),
+            Resource::Directory(dir) => {
+                let ensure = if dir.path.exists() && dir.path.is_dir() {
+                    Ensure::Present
+                } else {
+                    Ensure::Absent
+                };
+                Ok(ResourceState::Ensure(ensure))
+            }
+            Resource::Meta(_) => Ok(ResourceState::Ensure(Ensure::Present)),
         }
     }
 
@@ -32,7 +46,7 @@ impl ResourceProvider for FsAdapter {
 }
 
 impl FsAdapter {
-    async fn get_file_state(&self, file: &FileResource) -> Result<Ensure> {
+    async fn get_file_ensure(&self, file: &FileResource) -> Result<Ensure> {
         if !file.path.exists() {
             return Ok(Ensure::Absent);
         }
