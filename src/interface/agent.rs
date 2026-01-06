@@ -1,6 +1,4 @@
 use crate::domain::catalog::Catalog;
-use crate::domain::resource::ResourceProvider;
-use crate::infrastructure::fs_adapter::FsAdapter;
 use crate::infrastructure::facter::Facter;
 use anyhow::Context;
 
@@ -39,12 +37,12 @@ impl PupoxideAgent {
 
         tracing::info!("Received catalog with {} resources", catalog.resources.len());
 
-        // 2. Apply resources
-        let adapter = FsAdapter;
-        for resource in catalog.resources {
-            tracing::info!("Applying resource: {}", resource.id());
-            adapter.apply(&resource).await.context(format!("Failed to apply resource {}", resource.id()))?;
-        }
+        // 3. Apply changes with rollback support
+        let state_dir = std::path::PathBuf::from("/tmp/pupoxide");
+        let backup_store = crate::infrastructure::BackupStore::new(state_dir.join("backups"));
+        let state_store = crate::infrastructure::StateStore::new(state_dir.join("state"));
+
+        crate::application::execute_transaction(catalog, &backup_store, &state_store).await?;
 
         tracing::info!("Catalog application finished successfully");
         Ok(())

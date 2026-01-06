@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
             let facts = pupoxide::infrastructure::Facter::collect();
             let catalog = engine.run_manifest(file, "localhost".to_string(), "local".to_string(), facts)?;
             
-            execute_catalog_with_transaction(catalog, &backup_store, &state_store).await?;
+            pupoxide::application::execute_transaction(catalog, &backup_store, &state_store).await?;
         }
         Commands::Apply { environment } => {
             let loader = EnvironmentLoader::new(cli.config);
@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
             let facts = pupoxide::infrastructure::Facter::collect();
             let catalog = engine.run_manifest_with_modules(manifest_path, modules_path, "localhost".to_string(), environment, facts)?;
             
-            execute_catalog_with_transaction(catalog, &backup_store, &state_store).await?;
+            pupoxide::application::execute_transaction(catalog, &backup_store, &state_store).await?;
         }
         Commands::Rollback { transaction_id } => {
             let transaction = if let Some(id) = transaction_id {
@@ -94,48 +94,3 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn execute_catalog_with_transaction(
-    catalog: pupoxide::domain::Catalog,
-    backup_store: &pupoxide::infrastructure::BackupStore,
-    state_store: &pupoxide::infrastructure::StateStore,
-) -> Result<()> {
-    let adapter = FsAdapter;
-    let transaction_id = format!("tx_{}", chrono::Utc::now().timestamp());
-    let mut transaction = pupoxide::domain::Transaction::new(transaction_id.clone(), catalog.clone());
-
-    tracing::info!(id = %transaction_id, "Starting transaction");
-
-    for resource in &catalog.resources {
-        // 1. Snapshot original state
-        let backup_needed = match resource {
-            pupoxide::domain::Resource::File(f) => f.backup,
-            pupoxide::domain::Resource::Directory(d) => d.backup,
-            _ => false,
-        };
-
-        let state = adapter.get_state(resource, backup_needed).await?;
-        transaction.original_states.insert(resource.id().to_string(), state.clone());
-
-        // 2. Store backup if it's a file with content
-        if let pupoxide::domain::ResourceState::Full { content: Some(bytes), .. } = state {
-            let hash = backup_store.store(&bytes)?;
-            transaction.backups.insert(resource.id().to_string(), hash);
-        }
-
-        // 3. Apply changes
-        match adapter.apply(resource).await {
-            Ok(_) => {
-                transaction.resource_statuses.insert(resource.id().to_string(), pupoxide::domain::RollbackStatus::Success);
-            }
-            Err(e) => {
-                transaction.resource_statuses.insert(resource.id().to_string(), pupoxide::domain::RollbackStatus::Failed(e.to_string()));
-                state_store.save_transaction(&transaction)?;
-                return Err(e.into());
-            }
-        }
-    }
-
-    state_store.save_transaction(&transaction)?;
-    tracing::info!(id = %transaction_id, "Transaction completed and saved");
-    Ok(())
-}
