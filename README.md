@@ -104,6 +104,15 @@ include("nginx") -> file("/etc/nginx/sites-enabled/default", #{
     ensure: "present",
     content: "server { listen 80; }"
 });
+
+// Manage ownership and permissions
+file("/etc/secrets.conf", #{
+    ensure: "present",
+    content: "super_secret_key=123",
+    owner: "root",
+    group: "wheel",
+    mode: "600"
+});
 ```
 
 ## Directory Structure
