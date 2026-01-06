@@ -36,11 +36,12 @@ cargo run -- rollback
 cargo run -- rollback --transaction-id tx_123456789
 ```
 
-To enable rollback for a resource, use the `backup: true` parameter:
+To enable rollback for a resource, use the `backup: true` parameter (enabled by default):
 ```rhai
-file("/tmp/important.conf", #{
-    content: "new value",
-    backup: true
+file("/etc/motd", #{
+    content: "Welcome to the server!",
+    backup: true,
+    max_backup_size: 1024 * 1024 // 1MB limit
 });
 ```
 
@@ -48,31 +49,48 @@ file("/tmp/important.conf", #{
 Apply all manifests from a specific environment using the Puppet-like directory structure:
 
 ```bash
-cargo run -- apply --environment production --config ./examples
+# Default config path is /etc/pupoxide
+cargo run -- --config ./examples apply --environment production
 ```
-*Note: The `--config` flag points to the directory containing the `environments` folder. Defaults to `/etc/pupoxide`.*
 
 ## Example Manifest (`site.rhai`)
 
-```rust
-// Define a file resource
-let config = file("/tmp/hello.txt", present(), "Hello from Pupoxide!");
+Pupoxide uses Rhai with a custom DSL. Resources are defined using object maps, and dependencies can be expressed using the `require` attribute or the arrow operator `->`.
 
-// Return it (or an array of resources) to apply
-[config]
+```rust
+// Load a module
+include("common");
+
+// Define a directory
+directory("/var/www/html", #{ ensure: "present" });
+
+// Define a file that depends on the directory and a module
+file("/var/www/html/index.html", #{
+    ensure: "present",
+    content: "<h1>Hello from Pupoxide!</h1>",
+    require: [directory("/var/www/html"), include("common")]
+});
+
+// Or use the arrow operator for clean dependency chains
+include("nginx") -> file("/etc/nginx/sites-enabled/default", #{
+    ensure: "present",
+    content: "server { listen 80; }"
+});
 ```
 
 ## Directory Structure
 Pupoxide follows a modular structure for easier management:
 
 ```text
-/etc/pupoxide/
+[config_dir]/
   environments/
     production/
       manifests/
-        site.rhai      # Entry point
+        site.rhai      # Entry point for the environment
       modules/
-        nginx/         # Future module support
+        nginx/         # Module 'nginx'
+          manifests/
+            init.rhai  # Entry point for the module
 ```
 
 ## Documentation
