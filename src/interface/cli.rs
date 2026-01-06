@@ -14,15 +14,28 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Applies a manifest from a specific environment
+    /// Apply a single manifest file locally
+    Run {
+        #[arg(short, long)]
+        file: PathBuf,
+    },
+    /// Apply configuration from an environment locally
     Apply {
-        /// The environment to use (e.g., production, staging)
         #[arg(short, long)]
         environment: String,
     },
-    /// Executes a single rhai manifest file
-    Run {
-        /// Path to the rhai script
-        file: PathBuf,
+    /// Start the Pupoxide Master server
+    Master {
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+    },
+    /// Start the Pupoxide Agent
+    Agent {
+        #[arg(short, long)]
+        server: String,
+        #[arg(short, long)]
+        node: String,
+        #[arg(short, long)]
+        environment: String,
     },
 }

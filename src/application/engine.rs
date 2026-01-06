@@ -1,29 +1,30 @@
 use rhai::{Engine, Scope, Dynamic, Map, NativeCallContext};
 use std::path::PathBuf;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, HashSet};
 use crate::domain::resource::{Resource, FileResource, Ensure};
+use crate::domain::catalog::Catalog;
 use crate::domain::error::{Result, DomainError};
 
 #[derive(Clone)]
 struct SharedCollector {
-    resources: Rc<RefCell<Vec<Resource>>>,
+    resources: Arc<Mutex<Vec<Resource>>>,
 }
 
+#[derive(Clone)]
 pub struct PupoxideEngine {
-    engine: Engine,
+    engine: Arc<Engine>,
     collector: SharedCollector,
-    module_path: Rc<RefCell<Option<PathBuf>>>,
+    module_path: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl PupoxideEngine {
     pub fn new() -> Self {
         let mut engine = Engine::new();
         let collector = SharedCollector {
-            resources: Rc::new(RefCell::new(Vec::new())),
+            resources: Arc::new(Mutex::new(Vec::new())),
         };
-        let module_path: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(None));
+        let module_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
 
         // Register Resource type
         engine.register_type_with_name::<Resource>("Resource");
@@ -82,14 +83,14 @@ impl PupoxideEngine {
                 dependencies,
             });
 
-            c.resources.borrow_mut().push(resource.clone());
+            c.resources.lock().unwrap().push(resource.clone());
             resource
         });
 
         let c2 = collector.clone();
         engine.register_custom_operator("->", 60).unwrap();
         engine.register_fn("->", move |lhs: Resource, rhs: Resource| {
-            let mut resources = c2.resources.borrow_mut();
+            let mut resources = c2.resources.lock().unwrap();
             if let Some(res) = resources.iter_mut().find(|r| r.id() == rhs.id()) {
                 res.add_dependency(lhs.id().to_string());
             }
@@ -99,7 +100,7 @@ impl PupoxideEngine {
         // Register 'include' function
         let m_path = module_path.clone();
         engine.register_fn("include", move |ctx: NativeCallContext, name: String| -> std::result::Result<Dynamic, Box<rhai::EvalAltResult>> {
-            let base = m_path.borrow();
+            let base = m_path.lock().unwrap();
             if let Some(ref bp) = *base {
                 let init_path = bp.join(&name).join("manifests").join("init.rhai");
                 if init_path.exists() {
@@ -119,15 +120,15 @@ impl PupoxideEngine {
             )))
         });
 
-        Self { engine, collector, module_path }
+        Self { engine: Arc::new(engine), collector, module_path }
     }
 
     pub fn set_module_path(&self, path: PathBuf) {
-        *self.module_path.borrow_mut() = Some(path);
+        *self.module_path.lock().unwrap() = Some(path);
     }
 
-    pub fn run_manifest(&self, path: PathBuf) -> Result<Vec<Resource>> {
-        self.collector.resources.borrow_mut().clear();
+    pub fn run_manifest(&self, path: PathBuf, node_name: String, environment: String) -> Result<Catalog> {
+        self.collector.resources.lock().unwrap().clear();
 
         let mut scope = Scope::new();
         let ast = self.engine.compile_file(path)
@@ -136,13 +137,15 @@ impl PupoxideEngine {
         let _ = self.engine.eval_ast_with_scope::<Dynamic>(&mut scope, &ast)
             .map_err(|e| DomainError::Internal(format!("Rhai execution error: {}", e)))?;
 
-        let resources = self.collector.resources.borrow().clone();
-        self.sort_resources(resources)
+        let resources = self.collector.resources.lock().unwrap().clone();
+        let sorted_resources = self.sort_resources(resources)?;
+
+        Ok(Catalog::new(node_name, environment, sorted_resources))
     }
 
-    pub fn run_manifest_with_modules(&self, path: PathBuf, module_path: PathBuf) -> Result<Vec<Resource>> {
+    pub fn run_manifest_with_modules(&self, path: PathBuf, module_path: PathBuf, node_name: String, environment: String) -> Result<Catalog> {
         self.set_module_path(module_path);
-        self.run_manifest(path)
+        self.run_manifest(path, node_name, environment)
     }
 
     /// Performs topological sort of resources based on dependencies

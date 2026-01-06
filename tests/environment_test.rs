@@ -25,17 +25,15 @@ async fn test_environment_loading_and_execution() {
         }});
         "#
     );
-    fs::write(&site_rhai, script).unwrap();
-
-    // 1. Load environment
-    let loader = EnvironmentLoader::new(base_dir.path().to_path_buf());
-    let manifest_path = loader.get_site_manifest("prod").unwrap();
+    let manifest_path = manifests_path.join("site.rhai");
+    fs::write(&manifest_path, script).unwrap();
 
     // 2. Execute Rhai
     let engine = PupoxideEngine::new();
-    let resources = engine.run_manifest(manifest_path).unwrap();
+    let catalog = engine.run_manifest(manifest_path, "test_node".to_string(), "prod".to_string()).unwrap();
 
     // Should have 2 resources in order: Dir then File
+    let resources = catalog.resources;
     assert_eq!(resources.len(), 2);
     assert!(resources[0].id().contains("_dir"));
     assert_eq!(resources[1].id(), format!("File[{}]", target_file_str));
@@ -80,12 +78,15 @@ async fn test_module_inclusion() {
     // 3. Execute
     let loader = EnvironmentLoader::new(base_dir.path().to_path_buf());
     let engine = PupoxideEngine::new();
-    let resources = engine.run_manifest_with_modules(
+    let catalog = engine.run_manifest_with_modules(
         site_rhai,
-        loader.get_modules_path("prod")
+        loader.get_modules_path("prod"),
+        "test_node".to_string(),
+        "prod".to_string()
     ).unwrap();
 
     // 4. Verify
+    let resources = catalog.resources;
     assert_eq!(resources.len(), 1);
     assert_eq!(resources[0].id(), format!("File[{}]", target_file_str));
     

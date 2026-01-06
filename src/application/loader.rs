@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use crate::domain::error::{Result, DomainError};
 
+#[derive(Debug, Clone)]
 pub struct EnvironmentLoader {
     base_path: PathBuf,
 }

@@ -15,26 +15,38 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let engine = PupoxideEngine::new();
-    let adapter = FsAdapter;
 
     match cli.command {
-        Commands::Apply { environment } => {
-            tracing::info!(env = %environment, "Applying environment...");
-            let loader = EnvironmentLoader::new(cli.config);
-            let manifest_path = loader.get_site_manifest(&environment)?;
-            let resources = engine.run_manifest(manifest_path)?;
-            
-            for resource in resources {
+        Commands::Run { file } => {
+            let engine = PupoxideEngine::new();
+            let catalog = engine.run_manifest(file, "localhost".to_string(), "local".to_string())?;
+            let adapter = FsAdapter;
+            for resource in catalog.resources {
                 adapter.apply(&resource).await?;
             }
         }
-        Commands::Run { file } => {
-            tracing::info!(file = %file.display(), "Running manifest...");
-            let resources = engine.run_manifest(file)?;
-            for resource in resources {
+        Commands::Apply { environment } => {
+            let loader = EnvironmentLoader::new(cli.config);
+            let manifest_path = loader.get_site_manifest(&environment)?;
+            let modules_path = loader.get_modules_path(&environment);
+            
+            let engine = PupoxideEngine::new();
+            let catalog = engine.run_manifest_with_modules(manifest_path, modules_path, "localhost".to_string(), environment)?;
+            
+            let adapter = FsAdapter;
+            for resource in catalog.resources {
                 adapter.apply(&resource).await?;
             }
+        }
+        Commands::Master { port } => {
+            let loader = EnvironmentLoader::new(cli.config);
+            let engine = PupoxideEngine::new();
+            let state = pupoxide::interface::server::MasterState { engine, loader };
+            pupoxide::interface::server::start_master(state, port).await?;
+        }
+        Commands::Agent { server, node, environment } => {
+            let agent = pupoxide::interface::agent::PupoxideAgent::new(server, node, environment);
+            agent.run().await?;
         }
     }
 
