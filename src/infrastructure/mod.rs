@@ -7,3 +7,5 @@ pub use fs_adapter::*;
 pub use facter::*;
 pub use backup_store::*;
 pub use state_store::*;
+pub mod hiera;
+pub use hiera::*;

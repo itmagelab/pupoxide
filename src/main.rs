@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Run { file, module_path, dry_run } => {
-            let engine = PupoxideEngine::new();
+            let engine = PupoxideEngine::new(None);
             
             // Smart module path resolution
             let resolved_module_path = if let Some(mp) = module_path {
@@ -53,7 +53,14 @@ async fn main() -> Result<()> {
             let manifest_path = loader.get_site_manifest(&environment)?;
             let modules_path = loader.get_modules_path(&environment);
             
-            let engine = PupoxideEngine::new();
+            let mut hiera = None;
+            let env_path = loader.get_modules_path(&environment).parent().unwrap().to_path_buf();
+            match pupoxide::infrastructure::Hiera::new(env_path) {
+                Ok(h) => hiera = h,
+                Err(e) => tracing::warn!("Failed to load Hiera: {}", e),
+            }
+
+            let engine = PupoxideEngine::new(hiera);
             let facts = pupoxide::infrastructure::Facter::collect();
             let catalog = engine.run_manifest_with_modules(manifest_path, modules_path, "localhost".to_string(), environment, facts)?;
             
@@ -81,7 +88,7 @@ async fn main() -> Result<()> {
         }
         Commands::Master { port } => {
             let loader = EnvironmentLoader::new(cli.config);
-            let engine = PupoxideEngine::new();
+            let engine = PupoxideEngine::new(None); // Master might need to load Hiera per request/environment later
             let state = pupoxide::interface::server::MasterState { engine, loader };
             pupoxide::interface::server::start_master(state, port).await?;
         }

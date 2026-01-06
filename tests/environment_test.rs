@@ -29,7 +29,7 @@ async fn test_environment_loading_and_execution() {
     fs::write(&manifest_path, script).unwrap();
 
     // 2. Execute Rhai
-    let engine = PupoxideEngine::new();
+    let engine = PupoxideEngine::new(None);
     let catalog = engine.run_manifest(manifest_path, "test_node".to_string(), "prod".to_string(), pupoxide::domain::Facts::default()).unwrap();
 
     // Should have 2 resources in order: Dir then File
@@ -78,7 +78,7 @@ async fn test_module_inclusion() {
 
     // 3. Execute
     let loader = EnvironmentLoader::new(base_dir.path().to_path_buf());
-    let engine = PupoxideEngine::new();
+    let engine = PupoxideEngine::new(None);
     let catalog = engine.run_manifest_with_modules(
         site_rhai,
         loader.get_modules_path("prod"),
@@ -117,7 +117,7 @@ async fn test_facts_availability_in_rhai() {
     let mut facts = pupoxide::domain::Facts::new();
     facts.insert("hostname".to_string(), "test_host".to_string());
 
-    let engine = PupoxideEngine::new();
+    let engine = PupoxideEngine::new(None);
     let catalog = engine.run_manifest(site_rhai, "node1".to_string(), "env1".to_string(), facts).unwrap();
 
     let adapter = FsAdapter;
@@ -152,7 +152,7 @@ async fn test_module_dependency_chain() {
     fs::write(&site_rhai, site_script).unwrap();
 
     let loader = EnvironmentLoader::new(base_dir.path().to_path_buf());
-    let engine = PupoxideEngine::new();
+    let engine = PupoxideEngine::new(None);
     let catalog = engine.run_manifest_with_modules(
         site_rhai,
         loader.get_modules_path("prod"),

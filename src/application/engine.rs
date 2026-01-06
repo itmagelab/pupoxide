@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, HashSet};
 use std::cell::RefCell;
 use crate::domain::resource::{Resource, FileResource, Ensure, MetaResource, MetaKind};
+use crate::infrastructure::hiera::Hiera;
 use crate::domain::catalog::Catalog;
 use crate::domain::error::{Result, DomainError};
 use crate::domain::facts::Facts;
@@ -17,14 +18,16 @@ pub struct ExecutionContext {
     pub resources: Arc<Mutex<Vec<Resource>>>,
     pub included_modules: Arc<Mutex<HashSet<String>>>,
     pub module_stack: Arc<Mutex<Vec<String>>>,
+    pub facts: Arc<Facts>,
 }
 
 impl ExecutionContext {
-    fn new() -> Self {
+    fn new(facts: Facts) -> Self {
         Self {
             resources: Arc::new(Mutex::new(Vec::new())),
             included_modules: Arc::new(Mutex::new(HashSet::new())),
             module_stack: Arc::new(Mutex::new(Vec::new())),
+            facts: Arc::new(facts),
         }
     }
 }
@@ -40,16 +43,60 @@ pub struct ModuleHandle {
 pub struct PupoxideEngine {
     engine: Arc<Engine>,
     module_path: Arc<Mutex<Option<PathBuf>>>,
+    hiera: Arc<Option<Hiera>>,
 }
 
 impl PupoxideEngine {
-    pub fn new() -> Self {
+    pub fn new(hiera: Option<Hiera>) -> Self {
         let mut engine = Engine::new();
         let module_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+        let hiera_arc = Arc::new(hiera);
 
         // Register Resource and ModuleHandle types
         engine.register_type_with_name::<Resource>("Resource");
         engine.register_type_with_name::<ModuleHandle>("ModuleHandle");
+
+        // The 'lookup' function
+        let h = hiera_arc.clone();
+        engine.register_fn("lookup", move |key: String| -> Dynamic {
+            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("Execution context must be set"));
+            if let Some(hiera_impl) = h.as_ref() {
+                if let Some(val) = hiera_impl.lookup(&key, &exec_ctx.facts) {
+                    return match val {
+                            serde_yaml::Value::String(s) => Dynamic::from(s),
+                            serde_yaml::Value::Bool(b) => Dynamic::from(b),
+                            serde_yaml::Value::Number(n) => {
+                                if let Some(i) = n.as_i64() { Dynamic::from(i) }
+                                else if let Some(f) = n.as_f64() { Dynamic::from(f) }
+                                else { Dynamic::from(n.to_string()) }
+                            },
+                            _ => Dynamic::from(serde_yaml::to_string(&val).unwrap_or_default()) // Fallback
+                    };
+                }
+            }
+            Dynamic::UNIT
+        });
+
+        // The 'lookup' with default
+        let h2 = hiera_arc.clone();
+        engine.register_fn("lookup", move |key: String, default_val: Dynamic| -> Dynamic {
+             let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("Execution context must be set"));
+             if let Some(hiera_impl) = h2.as_ref() {
+                if let Some(val) = hiera_impl.lookup(&key, &exec_ctx.facts) {
+                     return match val {
+                             serde_yaml::Value::String(s) => Dynamic::from(s),
+                             serde_yaml::Value::Bool(b) => Dynamic::from(b),
+                             serde_yaml::Value::Number(n) => {
+                                 if let Some(i) = n.as_i64() { Dynamic::from(i) }
+                                 else if let Some(f) = n.as_f64() { Dynamic::from(f) }
+                                 else { Dynamic::from(n.to_string()) }
+                             },
+                             _ => Dynamic::from(serde_yaml::to_string(&val).unwrap_or_default())
+                        };
+                }
+            }
+            default_val
+        });
 
         // The 'directory' function
         engine.register_fn("directory", move |path: String, params: Map| {
@@ -311,7 +358,7 @@ impl PupoxideEngine {
             )))
         });
 
-        Self { engine: Arc::new(engine), module_path }
+        Self { engine: Arc::new(engine), module_path, hiera: hiera_arc }
     }
 
     pub fn set_module_path(&self, path: PathBuf) {
@@ -319,7 +366,7 @@ impl PupoxideEngine {
     }
 
     pub fn run_manifest(&self, path: PathBuf, node_name: String, environment: String, facts: Facts) -> Result<Catalog> {
-        let exec_ctx = ExecutionContext::new();
+        let exec_ctx = ExecutionContext::new(facts.clone());
         let mut scope = Scope::new();
         
         // Inject facts into scope
