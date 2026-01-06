@@ -11,6 +11,13 @@ impl ResourceProvider for FsAdapter {
     async fn get_state(&self, resource: &Resource) -> Result<Ensure> {
         match resource {
             Resource::File(file) => self.get_file_state(file).await,
+            Resource::Directory(dir) => {
+                if dir.path.exists() && dir.path.is_dir() {
+                    Ok(Ensure::Present)
+                } else {
+                    Ok(Ensure::Absent)
+                }
+            }
             Resource::Meta(_) => Ok(Ensure::Present),
         }
     }
@@ -18,6 +25,7 @@ impl ResourceProvider for FsAdapter {
     async fn apply(&self, resource: &Resource) -> Result<()> {
         match resource {
             Resource::File(file) => self.apply_file(file).await,
+            Resource::Directory(dir) => self.apply_directory(dir).await,
             Resource::Meta(_) => Ok(()),
         }
     }
@@ -29,15 +37,15 @@ impl FsAdapter {
             return Ok(Ensure::Absent);
         }
 
+        if file.path.is_dir() {
+             return Ok(Ensure::Absent);
+        }
+
         if let Some(expected_content) = &file.content {
             let actual_content = fs::read_to_string(&file.path)
                 .map_err(|e| DomainError::Internal(format!("Failed to read file: {}", e)))?;
             
             if &actual_content != expected_content {
-                // If content differs, we consider it "absent" from the desired state perspective, 
-                // or more accurately, we'll need to re-apply. 
-                // For simplicity in this iteration, if it exists but content is wrong, 
-                // we'll say it's not in the desired "Present" state.
                 return Ok(Ensure::Absent); 
             }
         }
@@ -48,6 +56,14 @@ impl FsAdapter {
     async fn apply_file(&self, file: &FileResource) -> Result<()> {
         match file.ensure {
             Ensure::Present => {
+                // Auto-create parent directories
+                if let Some(parent) = file.path.parent() {
+                    if !parent.exists() {
+                        fs::create_dir_all(parent)
+                            .map_err(|e| DomainError::Internal(format!("Failed to create parent directory: {}", e)))?;
+                    }
+                }
+
                 let mut f = fs::File::create(&file.path)
                     .map_err(|e| DomainError::Internal(format!("Failed to create file: {}", e)))?;
                 
@@ -63,6 +79,33 @@ impl FsAdapter {
                     fs::remove_file(&file.path)
                         .map_err(|e| DomainError::Internal(format!("Failed to remove file: {}", e)))?;
                     tracing::info!(path = %file.path.display(), "File ensured absent");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn apply_directory(&self, dir: &crate::domain::resource::DirectoryResource) -> Result<()> {
+        match dir.ensure {
+            Ensure::Present => {
+                if !dir.path.exists() {
+                    fs::create_dir_all(&dir.path)
+                        .map_err(|e| DomainError::Internal(format!("Failed to create directory: {}", e)))?;
+                    tracing::info!(path = %dir.path.display(), "Directory ensured present");
+                } else if !dir.path.is_dir() {
+                    return Err(DomainError::Internal(format!("Path exists but is not a directory: {}", dir.path.display())));
+                }
+            }
+            Ensure::Absent => {
+                if dir.path.exists() {
+                    if dir.path.is_dir() {
+                        fs::remove_dir_all(&dir.path)
+                            .map_err(|e| DomainError::Internal(format!("Failed to remove directory: {}", e)))?;
+                        tracing::info!(path = %dir.path.display(), "Directory ensured absent");
+                    } else {
+                        fs::remove_file(&dir.path)
+                            .map_err(|_e| DomainError::Internal(format!("Failed to remove file blocking directory removal: {}", dir.path.display())))?;
+                    }
                 }
             }
         }

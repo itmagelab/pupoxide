@@ -1,10 +1,10 @@
 // Nginx module for Pupoxide
 // Demonstrates how to organize resources in a reusable module
 
-let base_path = "/etc/nginx";
+let base_path = "/tmp/pupoxide_nginx";
 
 // 1. Ensure nginx directory exists
-let nginx_dir = file(base_path, #{
+let nginx_dir = directory(base_path, #{
     ensure: "present"
 });
 

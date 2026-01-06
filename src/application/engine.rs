@@ -51,7 +51,52 @@ impl PupoxideEngine {
         engine.register_type_with_name::<Resource>("Resource");
         engine.register_type_with_name::<ModuleHandle>("ModuleHandle");
 
-        // Register Ensure enum
+        // The 'directory' function
+        engine.register_fn("directory", move |path: String, params: Map| {
+            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("No execution context"));
+            
+            let ensure = params.get("ensure")
+                .and_then(|v| {
+                    if let Some(s) = v.clone().try_cast::<String>() {
+                        Some(match s.as_str() {
+                            "absent" => Ensure::Absent,
+                            _ => Ensure::Present,
+                        })
+                    } else {
+                        v.clone().try_cast::<Ensure>()
+                    }
+                })
+                .unwrap_or(Ensure::Present);
+
+            let mut dependencies = Vec::new();
+            let stack = exec_ctx.module_stack.lock().unwrap();
+            if let Some(curr_mod) = stack.last() {
+                dependencies.push(format!("ModuleStart[{}]", curr_mod));
+            }
+            drop(stack);
+
+            if let Some(req) = params.get("require") {
+                if let Some(dep_res) = req.clone().try_cast::<Resource>() {
+                    dependencies.push(dep_res.id().to_string());
+                } else if let Some(dep_id) = req.clone().try_cast::<String>() {
+                    dependencies.push(dep_id);
+                } else if let Some(m_h) = req.clone().try_cast::<ModuleHandle>() {
+                    dependencies.push(m_h.end_id);
+                }
+            }
+
+            let resource = Resource::Directory(crate::domain::resource::DirectoryResource {
+                id: format!("Directory[{}]", path),
+                path: PathBuf::from(path),
+                ensure,
+                dependencies,
+            });
+
+            exec_ctx.resources.lock().unwrap().push(resource.clone());
+            resource
+        });
+
+        // The main 'file' function
         engine.register_type_with_name::<Ensure>("Ensure")
               .register_fn("present", || Ensure::Present)
               .register_fn("absent", || Ensure::Absent);

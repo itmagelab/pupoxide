@@ -38,10 +38,19 @@ pub struct MetaResource {
     pub dependencies: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, validator::Validate)]
+pub struct DirectoryResource {
+    pub id: String,
+    pub path: PathBuf,
+    pub ensure: Ensure,
+    pub dependencies: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Resource {
     File(FileResource),
+    Directory(DirectoryResource),
     Meta(MetaResource),
 }
 
@@ -49,6 +58,7 @@ impl Resource {
     pub fn id(&self) -> &str {
         match self {
             Resource::File(f) => &f.id,
+            Resource::Directory(d) => &d.id,
             Resource::Meta(m) => &m.id,
         }
     }
@@ -56,6 +66,7 @@ impl Resource {
     pub fn dependencies(&self) -> &[String] {
         match self {
             Resource::File(f) => &f.dependencies,
+            Resource::Directory(d) => &d.dependencies,
             Resource::Meta(m) => &m.dependencies,
         }
     }
@@ -65,6 +76,11 @@ impl Resource {
             Resource::File(f) => {
                 if !f.dependencies.contains(&dep_id) {
                     f.dependencies.push(dep_id);
+                }
+            }
+            Resource::Directory(d) => {
+                if !d.dependencies.contains(&dep_id) {
+                    d.dependencies.push(dep_id);
                 }
             }
             Resource::Meta(m) => {
