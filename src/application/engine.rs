@@ -53,7 +53,7 @@ impl PupoxideEngine {
 
         // The 'directory' function
         engine.register_fn("directory", move |path: String, params: Map| {
-            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("No execution context"));
+            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("Execution context must be set during Rhai evaluation"));
             
             let ensure = params.get("ensure")
                 .and_then(|v| {
@@ -69,7 +69,7 @@ impl PupoxideEngine {
                 .unwrap_or(Ensure::Present);
 
             let mut dependencies = Vec::new();
-            let stack = exec_ctx.module_stack.lock().unwrap();
+            let stack = exec_ctx.module_stack.lock().expect("Failed to lock module stack");
             if let Some(curr_mod) = stack.last() {
                 dependencies.push(format!("ModuleStart[{}]", curr_mod));
             }
@@ -97,7 +97,7 @@ impl PupoxideEngine {
                 backup,
             });
 
-            exec_ctx.resources.lock().unwrap().push(resource.clone());
+            exec_ctx.resources.lock().expect("Failed to lock resources").push(resource.clone());
             resource
         });
 
@@ -134,7 +134,7 @@ impl PupoxideEngine {
             let mut dependencies = Vec::new();
 
             // Automatic dependency on current module start
-            let stack = exec_ctx.module_stack.lock().unwrap();
+            let stack = exec_ctx.module_stack.lock().expect("Failed to lock module stack");
             if let Some(curr_mod) = stack.last() {
                 dependencies.push(format!("ModuleStart[{}]", curr_mod));
             }
@@ -183,16 +183,16 @@ impl PupoxideEngine {
                 max_backup_size,
             });
 
-            exec_ctx.resources.lock().unwrap().push(resource.clone());
+            exec_ctx.resources.lock().expect("Failed to lock resources").push(resource.clone());
             resource
         });
 
-        engine.register_custom_operator("->", 60).unwrap();
+        engine.register_custom_operator("->", 60).expect("Failed to register custom operator");
         
         // Resource -> Resource
         engine.register_fn("->", move |lhs: Resource, rhs: Resource| {
-            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("No execution context"));
-            let mut resources = exec_ctx.resources.lock().unwrap();
+            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("Execution context must be set during Rhai evaluation"));
+            let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
             if let Some(res) = resources.iter_mut().find(|r: &&mut Resource| r.id() == rhs.id()) {
                 res.add_dependency(lhs.id().to_string());
             }
@@ -201,8 +201,8 @@ impl PupoxideEngine {
 
         // ModuleHandle -> ModuleHandle
         engine.register_fn("->", move |lhs: ModuleHandle, rhs: ModuleHandle| {
-            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("No execution context"));
-            let mut resources = exec_ctx.resources.lock().unwrap();
+            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("Execution context must be set during Rhai evaluation"));
+            let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
             if let Some(res) = resources.iter_mut().find(|r: &&mut Resource| r.id() == rhs.start_id) {
                 res.add_dependency(lhs.end_id.clone());
             }
@@ -211,8 +211,8 @@ impl PupoxideEngine {
 
         // Resource -> ModuleHandle
         engine.register_fn("->", move |lhs: Resource, rhs: ModuleHandle| {
-            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("No execution context"));
-            let mut resources = exec_ctx.resources.lock().unwrap();
+            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("Execution context must be set during Rhai evaluation"));
+            let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
             if let Some(res) = resources.iter_mut().find(|r: &&mut Resource| r.id() == rhs.start_id) {
                 res.add_dependency(lhs.id().to_string());
             }
@@ -221,8 +221,8 @@ impl PupoxideEngine {
 
         // ModuleHandle -> Resource
         engine.register_fn("->", move |lhs: ModuleHandle, rhs: Resource| {
-            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("No execution context"));
-            let mut resources = exec_ctx.resources.lock().unwrap();
+            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("Execution context must be set during Rhai evaluation"));
+            let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
             if let Some(res) = resources.iter_mut().find(|r: &&mut Resource| r.id() == rhs.id()) {
                 res.add_dependency(lhs.end_id.clone());
             }
@@ -241,20 +241,20 @@ impl PupoxideEngine {
             };
 
             // Idempotency: skip if already included
-            let mut included = exec_ctx.included_modules.lock().unwrap();
+            let mut included = exec_ctx.included_modules.lock().expect("Failed to lock included modules");
             if included.contains(&name) {
                 return Ok(handle);
             }
             included.insert(name.clone());
             drop(included);
 
-            let base = m_path.lock().unwrap();
+            let base = m_path.lock().expect("Failed to lock module path");
             if let Some(ref bp) = *base {
                 let init_path = bp.join(&name).join("manifests").join("init.rhai");
                 if init_path.exists() {
                     // Emit ModuleStart
                     {
-                        let mut resources = exec_ctx.resources.lock().unwrap();
+                        let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
                         resources.push(Resource::Meta(MetaResource {
                             id: handle.start_id.clone(),
                             kind: MetaKind::ModuleStart,
@@ -263,7 +263,7 @@ impl PupoxideEngine {
                     }
 
                     // Push to stack
-                    exec_ctx.module_stack.lock().unwrap().push(name.clone());
+                    exec_ctx.module_stack.lock().expect("Failed to lock module stack").push(name.clone());
 
                     // Evaluate the included file
                     // We need to maintain the thread-local during this call as well, 
@@ -276,11 +276,11 @@ impl PupoxideEngine {
                     })?;
 
                     // Pop stack
-                    exec_ctx.module_stack.lock().unwrap().pop();
+                    exec_ctx.module_stack.lock().expect("Failed to lock module stack").pop();
 
                     // Emit ModuleEnd
                     {
-                        let mut resources = exec_ctx.resources.lock().unwrap();
+                        let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
                         resources.push(Resource::Meta(MetaResource {
                             id: handle.end_id.clone(),
                             kind: MetaKind::ModuleEnd,
@@ -301,7 +301,7 @@ impl PupoxideEngine {
     }
 
     pub fn set_module_path(&self, path: PathBuf) {
-        *self.module_path.lock().unwrap() = Some(path);
+        *self.module_path.lock().expect("Failed to lock module path") = Some(path);
     }
 
     pub fn run_manifest(&self, path: PathBuf, node_name: String, environment: String, facts: Facts) -> Result<Catalog> {
@@ -327,7 +327,7 @@ impl PupoxideEngine {
 
         let _ = eval_res.map_err(|e| DomainError::Internal(format!("Rhai execution error: {}", e)))?;
 
-        let resources = exec_ctx.resources.lock().unwrap().clone();
+        let resources = exec_ctx.resources.lock().expect("Failed to lock resources").clone();
         let sorted_resources = self.sort_resources(resources)?;
 
         Ok(Catalog::new(node_name, environment, sorted_resources))
