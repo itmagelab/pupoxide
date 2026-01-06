@@ -42,6 +42,9 @@ pub struct FileResource {
     pub dependencies: Vec<String>,
     pub backup: bool,
     pub max_backup_size: Option<u64>,
+    pub owner: Option<String>,
+    pub group: Option<String>,
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -65,6 +68,9 @@ pub struct DirectoryResource {
     pub ensure: Ensure,
     pub dependencies: Vec<String>,
     pub backup: bool,
+    pub owner: Option<String>,
+    pub group: Option<String>,
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

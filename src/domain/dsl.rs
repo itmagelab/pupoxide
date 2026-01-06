@@ -16,6 +16,9 @@ macro_rules! file {
             dependencies: vec![],
             backup: true,
             max_backup_size: None,
+            owner: None,
+            group: None,
+            mode: None,
         })
     };
     ($path:expr => { ensure: $ensure:expr }) => {
@@ -27,6 +30,9 @@ macro_rules! file {
             dependencies: vec![],
             backup: true,
             max_backup_size: None,
+            owner: None,
+            group: None,
+            mode: None,
         })
     };
 }

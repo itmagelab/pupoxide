@@ -87,7 +87,11 @@ impl PupoxideEngine {
 
             let backup = params.get("backup")
                 .and_then(|v| v.clone().try_cast::<bool>())
-                .unwrap_or(true);
+                .unwrap_or(false);
+
+            let owner = params.get("owner").and_then(|v| v.clone().try_cast::<String>());
+            let group = params.get("group").and_then(|v| v.clone().try_cast::<String>());
+            let mode = params.get("mode").and_then(|v| v.clone().try_cast::<String>());
 
             let resource = Resource::Directory(crate::domain::resource::DirectoryResource {
                 id: format!("Directory[{}]", path),
@@ -95,6 +99,9 @@ impl PupoxideEngine {
                 ensure,
                 dependencies,
                 backup,
+                owner,
+                group,
+                mode,
             });
 
             exec_ctx.resources.lock().expect("Failed to lock resources").push(resource.clone());
@@ -173,6 +180,10 @@ impl PupoxideEngine {
                     }
                 });
 
+            let owner = params.get("owner").and_then(|v| v.clone().try_cast::<String>());
+            let group = params.get("group").and_then(|v| v.clone().try_cast::<String>());
+            let mode = params.get("mode").and_then(|v| v.clone().try_cast::<String>());
+
             let resource = Resource::File(FileResource {
                 id: format!("File[{}]", path),
                 path: PathBuf::from(path),
@@ -181,6 +192,9 @@ impl PupoxideEngine {
                 dependencies,
                 backup,
                 max_backup_size,
+                owner,
+                group,
+                mode,
             });
 
             exec_ctx.resources.lock().expect("Failed to lock resources").push(resource.clone());
