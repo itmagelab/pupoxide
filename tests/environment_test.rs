@@ -11,7 +11,7 @@ async fn test_environment_loading_and_execution() {
     let manifests_path = env_path.join("manifests");
     fs::create_dir_all(&manifests_path).unwrap();
 
-    let site_rhai = manifests_path.join("site.rhai");
+    let _site_rhai = manifests_path.join("site.rhai");
     let target_file = base_dir.path().join("site_result.txt");
     let target_file_str = target_file.to_str().unwrap();
 
@@ -30,9 +30,10 @@ async fn test_environment_loading_and_execution() {
 
     // 2. Execute Rhai
     let engine = PupoxideEngine::new();
-    let catalog = engine.run_manifest(manifest_path, "test_node".to_string(), "prod".to_string()).unwrap();
+    let catalog = engine.run_manifest(manifest_path, "test_node".to_string(), "prod".to_string(), pupoxide::domain::Facts::default()).unwrap();
 
     // Should have 2 resources in order: Dir then File
+// ... (omitting unchanged lines in replacement for brevity if possible, but I'll provide full block)
     let resources = catalog.resources;
     assert_eq!(resources.len(), 2);
     assert!(resources[0].id().contains("_dir"));
@@ -82,7 +83,8 @@ async fn test_module_inclusion() {
         site_rhai,
         loader.get_modules_path("prod"),
         "test_node".to_string(),
-        "prod".to_string()
+        "prod".to_string(),
+        pupoxide::domain::Facts::default()
     ).unwrap();
 
     // 4. Verify
@@ -97,4 +99,29 @@ async fn test_module_inclusion() {
     
     assert!(target_file.exists());
     assert_eq!(fs::read_to_string(&target_file).unwrap(), "from module");
+}
+
+#[tokio::test]
+async fn test_facts_availability_in_rhai() {
+    let base_dir = tempdir().unwrap();
+    let site_rhai = base_dir.path().join("site.rhai");
+    let target_file = base_dir.path().join("facts_result.txt");
+    let target_file_str = target_file.to_str().unwrap();
+
+    let script = format!(
+        r#"file("{target_file_str}", #{{ ensure: "present", content: "Hostname is " + facts.hostname }});"#
+    );
+    fs::write(&site_rhai, script).unwrap();
+
+    let mut facts = pupoxide::domain::Facts::new();
+    facts.insert("hostname".to_string(), "test_host".to_string());
+
+    let engine = PupoxideEngine::new();
+    let catalog = engine.run_manifest(site_rhai, "node1".to_string(), "env1".to_string(), facts).unwrap();
+
+    let adapter = FsAdapter;
+    adapter.apply(&catalog.resources[0]).await.unwrap();
+
+    let content = fs::read_to_string(&target_file).unwrap();
+    assert_eq!(content, "Hostname is test_host");
 }

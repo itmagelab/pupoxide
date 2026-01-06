@@ -1,6 +1,7 @@
 use crate::domain::catalog::Catalog;
 use crate::domain::resource::ResourceProvider;
 use crate::infrastructure::fs_adapter::FsAdapter;
+use crate::infrastructure::facter::Facter;
 use anyhow::Context;
 
 pub struct PupoxideAgent {
@@ -21,9 +22,16 @@ impl PupoxideAgent {
     pub async fn run(&self) -> anyhow::Result<()> {
         tracing::info!("Agent starting for node {} in environment {}", self.node_name, self.environment);
 
-        // 1. Fetch catalog
+        // 1. Collect facts
+        let facts = Facter::collect();
+        tracing::info!("Collected {} facts", facts.values.len());
+
+        // 2. Fetch catalog
         let url = format!("{}/catalog/{}/{}", self.server_url, self.environment, self.node_name);
-        let catalog: Catalog = reqwest::get(url)
+        let client = reqwest::Client::new();
+        let catalog: Catalog = client.post(url)
+            .json(&facts)
+            .send()
             .await?
             .json()
             .await

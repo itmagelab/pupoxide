@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use crate::domain::resource::{Resource, FileResource, Ensure};
 use crate::domain::catalog::Catalog;
 use crate::domain::error::{Result, DomainError};
+use crate::domain::facts::Facts;
 
 #[derive(Clone)]
 struct SharedCollector {
@@ -127,10 +128,18 @@ impl PupoxideEngine {
         *self.module_path.lock().unwrap() = Some(path);
     }
 
-    pub fn run_manifest(&self, path: PathBuf, node_name: String, environment: String) -> Result<Catalog> {
+    pub fn run_manifest(&self, path: PathBuf, node_name: String, environment: String, facts: Facts) -> Result<Catalog> {
         self.collector.resources.lock().unwrap().clear();
 
         let mut scope = Scope::new();
+        
+        // Inject facts into scope
+        let mut facts_map = Map::new();
+        for (k, v) in facts.values {
+            facts_map.insert(k.into(), v.into());
+        }
+        scope.set_value("facts", facts_map);
+
         let ast = self.engine.compile_file(path)
             .map_err(|e| DomainError::Internal(format!("Rhai compilation error: {}", e)))?;
         
@@ -143,9 +152,9 @@ impl PupoxideEngine {
         Ok(Catalog::new(node_name, environment, sorted_resources))
     }
 
-    pub fn run_manifest_with_modules(&self, path: PathBuf, module_path: PathBuf, node_name: String, environment: String) -> Result<Catalog> {
+    pub fn run_manifest_with_modules(&self, path: PathBuf, module_path: PathBuf, node_name: String, environment: String, facts: Facts) -> Result<Catalog> {
         self.set_module_path(module_path);
-        self.run_manifest(path, node_name, environment)
+        self.run_manifest(path, node_name, environment, facts)
     }
 
     /// Performs topological sort of resources based on dependencies

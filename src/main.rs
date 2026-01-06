@@ -19,7 +19,8 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Run { file } => {
             let engine = PupoxideEngine::new();
-            let catalog = engine.run_manifest(file, "localhost".to_string(), "local".to_string())?;
+            let facts = pupoxide::infrastructure::Facter::collect();
+            let catalog = engine.run_manifest(file, "localhost".to_string(), "local".to_string(), facts)?;
             let adapter = FsAdapter;
             for resource in catalog.resources {
                 adapter.apply(&resource).await?;
@@ -31,7 +32,8 @@ async fn main() -> Result<()> {
             let modules_path = loader.get_modules_path(&environment);
             
             let engine = PupoxideEngine::new();
-            let catalog = engine.run_manifest_with_modules(manifest_path, modules_path, "localhost".to_string(), environment)?;
+            let facts = pupoxide::infrastructure::Facter::collect();
+            let catalog = engine.run_manifest_with_modules(manifest_path, modules_path, "localhost".to_string(), environment, facts)?;
             
             let adapter = FsAdapter;
             for resource in catalog.resources {
