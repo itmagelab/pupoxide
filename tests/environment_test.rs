@@ -89,8 +89,9 @@ async fn test_module_inclusion() {
 
     // 4. Verify
     let resources = catalog.resources;
-    assert_eq!(resources.len(), 1);
-    assert_eq!(resources[0].id(), format!("File[{}]", target_file_str));
+    // Expected: ModuleStart, File, ModuleEnd
+    assert_eq!(resources.len(), 3);
+    assert!(resources.iter().any(|r| r.id() == format!("File[{}]", target_file_str)));
     
     let adapter = FsAdapter;
     for res in resources {
@@ -120,8 +121,55 @@ async fn test_facts_availability_in_rhai() {
     let catalog = engine.run_manifest(site_rhai, "node1".to_string(), "env1".to_string(), facts).unwrap();
 
     let adapter = FsAdapter;
-    adapter.apply(&catalog.resources[0]).await.unwrap();
+    adapter.apply(&catalog.resources.iter().find(|r| r.id().contains("facts_result")).unwrap()).await.unwrap();
 
     let content = fs::read_to_string(&target_file).unwrap();
     assert_eq!(content, "Hostname is test_host");
+}
+
+#[tokio::test]
+async fn test_module_dependency_chain() {
+    let base_dir = tempdir().unwrap();
+    let env_dir = base_dir.path().join("environments").join("prod");
+    let modules_dir = env_dir.join("modules");
+    let site_manifest_dir = env_dir.join("manifests");
+
+    fs::create_dir_all(&site_manifest_dir).unwrap();
+    
+    // Create Module A
+    let mod_a_dir = modules_dir.join("mod_a").join("manifests");
+    fs::create_dir_all(&mod_a_dir).unwrap();
+    fs::write(mod_a_dir.join("init.rhai"), r#"file("/tmp/a", #{})"#).unwrap();
+
+    // Create Module B
+    let mod_b_dir = modules_dir.join("mod_b").join("manifests");
+    fs::create_dir_all(&mod_b_dir).unwrap();
+    fs::write(mod_b_dir.join("init.rhai"), r#"file("/tmp/b", #{})"#).unwrap();
+
+    // Site manifest with dependency: A must complete before B starts
+    let site_script = r#"include("mod_a") -> include("mod_b");"#;
+    let site_rhai = site_manifest_dir.join("site.rhai");
+    fs::write(&site_rhai, site_script).unwrap();
+
+    let loader = EnvironmentLoader::new(base_dir.path().to_path_buf());
+    let engine = PupoxideEngine::new();
+    let catalog = engine.run_manifest_with_modules(
+        site_rhai,
+        loader.get_modules_path("prod"),
+        "node_test".to_string(),
+        "prod".to_string(),
+        pupoxide::domain::Facts::default()
+    ).unwrap();
+
+    let resources = catalog.resources;
+    
+    // Check for ModuleStart/End and order
+    let end_a_pos = resources.iter().position(|r| r.id() == "ModuleEnd[mod_a]").expect("ModuleEnd[mod_a] missing");
+    let start_b_pos = resources.iter().position(|r| r.id() == "ModuleStart[mod_b]").expect("ModuleStart[mod_b] missing");
+    
+    assert!(end_a_pos < start_b_pos, "Module A must end before Module B starts");
+    
+    // Check that file in A depends on Start[A]
+    let file_a = resources.iter().find(|r| r.id() == "File[/tmp/a]").expect("File[/tmp/a] missing");
+    assert!(file_a.dependencies().contains(&"ModuleStart[mod_a]".to_string()));
 }

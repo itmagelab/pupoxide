@@ -11,12 +11,14 @@ impl ResourceProvider for FsAdapter {
     async fn get_state(&self, resource: &Resource) -> Result<Ensure> {
         match resource {
             Resource::File(file) => self.get_file_state(file).await,
+            Resource::Meta(_) => Ok(Ensure::Present),
         }
     }
 
     async fn apply(&self, resource: &Resource) -> Result<()> {
         match resource {
             Resource::File(file) => self.apply_file(file).await,
+            Resource::Meta(_) => Ok(()),
         }
     }
 }

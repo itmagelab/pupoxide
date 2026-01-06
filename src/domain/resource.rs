@@ -24,22 +24,39 @@ pub struct FileResource {
     pub dependencies: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MetaKind {
+    ModuleStart,
+    ModuleEnd,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetaResource {
+    pub id: String,
+    pub kind: MetaKind,
+    pub dependencies: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Resource {
     File(FileResource),
+    Meta(MetaResource),
 }
 
 impl Resource {
     pub fn id(&self) -> &str {
         match self {
             Resource::File(f) => &f.id,
+            Resource::Meta(m) => &m.id,
         }
     }
 
     pub fn dependencies(&self) -> &[String] {
         match self {
             Resource::File(f) => &f.dependencies,
+            Resource::Meta(m) => &m.dependencies,
         }
     }
 
@@ -48,6 +65,11 @@ impl Resource {
             Resource::File(f) => {
                 if !f.dependencies.contains(&dep_id) {
                     f.dependencies.push(dep_id);
+                }
+            }
+            Resource::Meta(m) => {
+                if !m.dependencies.contains(&dep_id) {
+                    m.dependencies.push(dep_id);
                 }
             }
         }
