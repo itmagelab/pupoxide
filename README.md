@@ -25,6 +25,13 @@ cargo build --release
 ```
 
 ## Quick Start
+### Dry-Run Mode (Preview)
+You can preview changes without applying them by using the `--dry-run` flag with `run`, `apply`, or `agent` commands:
+
+```bash
+cargo run -- run --dry-run --file ./examples/environments/production/manifests/site.rhai
+```
+This will log actions as "Would ensure resource" instead of executing them.
 
 ### 1. Run a single manifest
 You can execute any `.rhai` script directly:
