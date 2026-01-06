@@ -2,6 +2,14 @@
 
 Pupoxide is a high-performance, memory-safe, and declarative configuration management tool inspired by Puppet, built with Rust and the Rhai scripting engine.
 
+> [!WARNING]
+> **Experimental Project / Proof of Concept**
+> 
+> This project is an attempt to reimplement the core ideas of Puppet using Rust. It is **not ready for production use** and serves primarily as an architectural experiment and a playground for ideas.
+>
+> We are actively looking for **contributors**! If you are interested in Rust, configuration management, or language design, please feel free to open issues or submit PRs.
+
+
 ## Key Features
 - **Declarative DSL**: Use [Rhai](https://rhai.rs/) scripts for clear, modular manifests.
 - **Hexagonal Architecture**: Core logic isolated from system-specific implementation.
