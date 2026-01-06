@@ -1,28 +1,25 @@
-// Pupoxide Example Manifest
-// This script demonstrates the power of Rhai-based DSL
+// Pupoxide Simplified DSL Example
+// Demonstrating Object Maps, Automatic Collection, and Arrow Dependencies
 
-let base_path = "/tmp/pupoxide_demo";
+let base_path = "/tmp/pupoxide_deps_demo";
 
-// 1. Ensure the base directory exists (using a custom loop for demo)
-let folders = ["configs", "logs", "data"];
+// 1. Create a directory
+let app_dir = file(base_path, #{
+    ensure: "present"
+});
 
-let manifest = [];
+// 2. Create files inside that directory (using arrow for dependency)
+app_dir -> file(base_path + "/config.yaml", #{
+    ensure: "present",
+    content: "debug: true"
+});
 
-for folder in folders {
-    let p = base_path + "/" + folder + "/.keep";
-    
-    // Create a .keep file to ensure directory exists
-    // (In a real scenario, we'd have a 'directory' resource)
-    manifest.push(file(p, present(), "Keep me!"));
-}
+// 3. Another file with 'require' instead of arrow
+file(base_path + "/README.md", #{
+    ensure: "present",
+    content: "# My App",
+    require: app_dir
+});
 
-// 2. A specific configuration file
-let config_file = file(base_path + "/configs/app.conf", present(), "port = 8080\nenv = production");
-manifest.push(config_file);
-
-// 3. A file to be removed
-let old_file = file(base_path + "/old_config.tmp", absent());
-manifest.push(old_file);
-
-// Return the list of resources to be applied
-manifest
+// Note: No 'return' or 'manifest' variable needed!
+// Resources are collected automatically.

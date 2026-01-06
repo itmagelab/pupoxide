@@ -15,13 +15,14 @@ async fn test_environment_loading_and_execution() {
     let target_file = base_dir.path().join("site_result.txt");
     let target_file_str = target_file.to_str().unwrap();
 
-    // Rhai script that returns a resource
+    // Rhai script with dependencies and Maps
     let script = format!(
         r#"
-        let manifest = [
-            file("{target_file_str}", present(), "Config from Rhai!")
-        ];
-        manifest
+        let f1 = file("{target_file_str}_dir", #{{ ensure: "present" }});
+        f1 -> file("{target_file_str}", #{{ 
+            ensure: "present", 
+            content: "Config from simplified Rhai!" 
+        }});
         "#
     );
     fs::write(&site_rhai, script).unwrap();
@@ -34,7 +35,10 @@ async fn test_environment_loading_and_execution() {
     let engine = PupoxideEngine::new();
     let resources = engine.run_manifest(manifest_path).unwrap();
 
-    assert_eq!(resources.len(), 1);
+    // Should have 2 resources in order: Dir then File
+    assert_eq!(resources.len(), 2);
+    assert!(resources[0].id().contains("_dir"));
+    assert_eq!(resources[1].id(), format!("File[{}]", target_file_str));
 
     // 3. Apply via adapter
     let adapter = FsAdapter;
@@ -45,5 +49,5 @@ async fn test_environment_loading_and_execution() {
     // 4. Verify result
     assert!(target_file.exists());
     let content = fs::read_to_string(&target_file).unwrap();
-    assert_eq!(content, "Config from Rhai!");
+    assert_eq!(content, "Config from simplified Rhai!");
 }
