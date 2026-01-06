@@ -17,7 +17,7 @@ impl PupoxideAgent {
         }
     }
 
-    pub async fn run(&self) -> anyhow::Result<()> {
+    pub async fn run(&self, dry_run: bool) -> anyhow::Result<()> {
         tracing::info!("Agent starting for node {} in environment {}", self.node_name, self.environment);
 
         // 1. Collect facts
@@ -42,7 +42,7 @@ impl PupoxideAgent {
         let backup_store = crate::infrastructure::BackupStore::new(state_dir.join("backups"));
         let state_store = crate::infrastructure::StateStore::new(state_dir.join("state"));
 
-        crate::application::execute_transaction(catalog, &backup_store, &state_store).await?;
+        crate::application::execute_transaction(catalog, &backup_store, &state_store, dry_run).await?;
 
         tracing::info!("Catalog application finished successfully");
         Ok(())

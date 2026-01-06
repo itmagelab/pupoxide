@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
     let state_store = pupoxide::infrastructure::StateStore::new(state_dir.join("state"));
 
     match cli.command {
-        Commands::Run { file, module_path } => {
+        Commands::Run { file, module_path, dry_run } => {
             let engine = PupoxideEngine::new();
             
             // Smart module path resolution
@@ -46,9 +46,9 @@ async fn main() -> Result<()> {
             let facts = pupoxide::infrastructure::Facter::collect();
             let catalog = engine.run_manifest(file, "localhost".to_string(), "local".to_string(), facts)?;
             
-            pupoxide::application::execute_transaction(catalog, &backup_store, &state_store).await?;
+            pupoxide::application::execute_transaction(catalog, &backup_store, &state_store, dry_run).await?;
         }
-        Commands::Apply { environment } => {
+        Commands::Apply { environment, dry_run } => {
             let loader = EnvironmentLoader::new(cli.config);
             let manifest_path = loader.get_site_manifest(&environment)?;
             let modules_path = loader.get_modules_path(&environment);
@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
             let facts = pupoxide::infrastructure::Facter::collect();
             let catalog = engine.run_manifest_with_modules(manifest_path, modules_path, "localhost".to_string(), environment, facts)?;
             
-            pupoxide::application::execute_transaction(catalog, &backup_store, &state_store).await?;
+            pupoxide::application::execute_transaction(catalog, &backup_store, &state_store, dry_run).await?;
         }
         Commands::Rollback { transaction_id } => {
             let transaction = if let Some(id) = transaction_id {
@@ -85,9 +85,9 @@ async fn main() -> Result<()> {
             let state = pupoxide::interface::server::MasterState { engine, loader };
             pupoxide::interface::server::start_master(state, port).await?;
         }
-        Commands::Agent { server, node, environment } => {
+        Commands::Agent { server, node, environment, dry_run } => {
             let agent = pupoxide::interface::agent::PupoxideAgent::new(server, node, environment);
-            agent.run().await?;
+            agent.run(dry_run).await?;
         }
     }
 

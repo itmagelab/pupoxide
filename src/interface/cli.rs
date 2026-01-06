@@ -22,11 +22,19 @@ pub enum Commands {
         /// Path to the modules directory (optional)
         #[arg(short, long)]
         module_path: Option<PathBuf>,
+
+        /// Run in dry-run mode without making changes
+        #[arg(long, default_value = "false")]
+        dry_run: bool,
     },
     /// Apply configuration from an environment locally
     Apply {
         #[arg(short, long)]
         environment: String,
+
+        /// Run in dry-run mode without making changes
+        #[arg(long, default_value = "false")]
+        dry_run: bool,
     },
     /// Start the Pupoxide Master server
     Master {
@@ -40,7 +48,12 @@ pub enum Commands {
         #[arg(short, long)]
         node: String,
         #[arg(short, long)]
+        #[arg(short, long)]
         environment: String,
+
+        /// Run in dry-run mode without making changes
+        #[arg(long, default_value = "false")]
+        dry_run: bool,
     },
     /// Rollback a previous transaction
     Rollback {
