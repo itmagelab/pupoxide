@@ -18,6 +18,10 @@ pub enum Commands {
     Run {
         #[arg(short, long)]
         file: PathBuf,
+
+        /// Path to the modules directory (optional)
+        #[arg(short, long)]
+        module_path: Option<PathBuf>,
     },
     /// Apply configuration from an environment locally
     Apply {

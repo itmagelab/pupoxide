@@ -21,9 +21,9 @@ The "Source of Truth". Pure logic, no side effects.
 ### Application Layer (`src/application/`)
 Orchestrates the flow.
 *   **PupoxideEngine**: Integrates the Rhai scripting engine.
-    *   **Collector**: A shared `RefCell<Vec<Resource>>` that accumulates resources during script execution.
+    *   **ExecutionContext**: A thread-local structure containing resources, inclusion set, and module stack for safe concurrent execution.
     *   **Topological Sort**: Uses a DAG to sort resources based on dependencies (the `require` attribute or `->` operator).
-    *   **include()**: Allows recursive execution of module entry points (`init.rhai`) within the same context.
+    *   **include()**: Returns a `ModuleHandle` and provides automatic module-level boundary synchronization.
 *   **EnvironmentLoader**: Resolves file paths for environments and modules.
 
 ### Infrastructure Layer (`src/infrastructure/`)

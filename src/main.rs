@@ -17,8 +17,29 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { file } => {
+        Commands::Run { file, module_path } => {
             let engine = PupoxideEngine::new();
+            
+            // Smart module path resolution
+            let resolved_module_path = if let Some(mp) = module_path {
+                Some(mp)
+            } else {
+                // Try to find a sibling 'modules' directory relative to the file
+                file.parent().and_then(|p| {
+                    let sibling_modules = if p.ends_with("manifests") {
+                        p.parent().map(|parent| parent.join("modules"))
+                    } else {
+                        Some(p.join("modules"))
+                    };
+                    
+                    sibling_modules.filter(|path| path.exists())
+                })
+            };
+
+            if let Some(mp) = resolved_module_path {
+                engine.set_module_path(mp);
+            }
+
             let facts = pupoxide::infrastructure::Facter::collect();
             let catalog = engine.run_manifest(file, "localhost".to_string(), "local".to_string(), facts)?;
             let adapter = FsAdapter;

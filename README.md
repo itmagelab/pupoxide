@@ -22,7 +22,7 @@ cargo build --release
 You can execute any `.rhai` script directly:
 
 ```bash
-cargo run -- run ./examples/environments/production/manifests/site.rhai
+cargo run -- run --file ./examples/environments/production/manifests/site.rhai
 ```
 
 ### 2. Apply an environment
