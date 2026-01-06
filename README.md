@@ -19,7 +19,7 @@ Pupoxide is a high-performance, memory-safe, and declarative configuration manag
 ## Installation
 
 ```bash
-git clone https://github.com/wilful/pupoxide.git
+git clone https://gitverse.ru/itmagelab/pupoxide
 cd pupoxide
 cargo build --release
 ```
