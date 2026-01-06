@@ -25,6 +25,25 @@ You can execute any `.rhai` script directly:
 cargo run -- run --file ./examples/environments/production/manifests/site.rhai
 ```
 
+### Rollback (Undo)
+Pupoxide can undo changes made to the system using the `rollback` command. It uses a selective backup system to restore original file contents.
+
+```bash
+# Rollback the last transaction
+cargo run -- rollback
+
+# Rollback a specific transaction
+cargo run -- rollback --transaction-id tx_123456789
+```
+
+To enable rollback for a resource, use the `backup: true` parameter:
+```rhai
+file("/tmp/important.conf", #{
+    content: "new value",
+    backup: true
+});
+```
+
 ### 2. Apply an environment
 Apply all manifests from a specific environment using the Puppet-like directory structure:
 

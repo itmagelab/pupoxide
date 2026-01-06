@@ -19,12 +19,9 @@ The "Source of Truth". Pure logic, no side effects.
 *   **ResourceProvider (Port)**: An `async_trait` that must be implemented by Infrastructure adapters.
 
 ### Application Layer (`src/application/`)
-Orchestrates the flow.
-*   **PupoxideEngine**: Integrates the Rhai scripting engine.
-    *   **ExecutionContext**: A thread-local structure containing resources, inclusion set, and module stack for safe concurrent execution.
-    *   **Topological Sort**: Uses a DAG to sort resources based on dependencies (the `require` attribute or `->` operator).
-    *   **include()**: Returns a `ModuleHandle` and provides automatic module-level boundary synchronization.
-*   **EnvironmentLoader**: Resolves file paths for environments and modules.
+- `PupoxideEngine`: Interface to Rhai, manages resource collection and include-logic.
+- `EnvironmentLoader`: Resolution of manifests and modules within an environment.
+- `RollbackEngine`: Logic for generating inverse catalogs based on transaction history and backups.
 
 ### Infrastructure Layer (`src/infrastructure/`)
 External dependencies and system interactions.
@@ -61,8 +58,13 @@ Dependencies can be defined in two ways:
     - Functions like `file()` and `include()` are called.
     - Resources populate the **Shared Collector**.
 4.  **Engine** performs a **Topological Sort** on the collected resources.
-5.  **Application Layer** iterates through sorted resources and calls the appropriate **Infrastructure Adapter**.
-6.  **Adapter** ensures the system state matches the resource definition.
+5. - **Application Layer**: orchestrates resource collection via Rhai, manages environments, and handles the Transaction lifecycle (Snapshot -> Apply -> Log).
+- **Execution Flow**:
+    1. Agent collects facts and sends them to Master.
+    2. Master evaluates manifests and returns a compiled `Catalog`.
+    3. Agent performs a **Snapshot** (collects current state and backups).
+    4. Agent applies the catalog.
+    5. Agent logs the **Transaction** for possible future rollback.
 
 ## 5. Directory Structure
 ```text
