@@ -1,8 +1,8 @@
-use anyhow::Result;
-use crate::infrastructure::FsAdapter;
-use crate::domain::resource::ResourceProvider;
 use crate::domain::catalog::Catalog;
+use crate::domain::resource::ResourceProvider;
+use crate::infrastructure::FsAdapter;
 use crate::infrastructure::{BackupStore, StateStore};
+use anyhow::Result;
 
 pub async fn execute_transaction(
     catalog: Catalog,
@@ -12,7 +12,8 @@ pub async fn execute_transaction(
 ) -> Result<()> {
     let adapter = FsAdapter;
     let transaction_id = format!("tx_{}", chrono::Utc::now().timestamp());
-    let mut transaction = crate::domain::transaction::Transaction::new(transaction_id.clone(), catalog.clone());
+    let mut transaction =
+        crate::domain::transaction::Transaction::new(transaction_id.clone(), catalog.clone());
 
     tracing::info!(id = %transaction_id, dry_run = %dry_run, "Starting transaction");
 
@@ -29,15 +30,21 @@ pub async fn execute_transaction(
         // For simplicity in this step, we just report intent.
 
         if dry_run {
-             tracing::info!(id = %resource.id(), "Would ensure resource");
-             continue;
+            tracing::info!(id = %resource.id(), "Would ensure resource");
+            continue;
         }
 
         let state = adapter.get_state(resource, backup_needed).await?;
-        transaction.original_states.insert(resource.id().to_string(), state.clone());
+        transaction
+            .original_states
+            .insert(resource.id().to_string(), state.clone());
 
         // 2. Store backup if it's a file with content
-        if let crate::domain::resource::ResourceState::Full { content: Some(bytes), .. } = state {
+        if let crate::domain::resource::ResourceState::Full {
+            content: Some(bytes),
+            ..
+        } = state
+        {
             let hash = backup_store.store(&bytes)?;
             transaction.backups.insert(resource.id().to_string(), hash);
         }
@@ -45,10 +52,16 @@ pub async fn execute_transaction(
         // 3. Apply changes
         match adapter.apply(resource).await {
             Ok(_) => {
-                transaction.resource_statuses.insert(resource.id().to_string(), crate::domain::resource::RollbackStatus::Success);
+                transaction.resource_statuses.insert(
+                    resource.id().to_string(),
+                    crate::domain::resource::RollbackStatus::Success,
+                );
             }
             Err(e) => {
-                transaction.resource_statuses.insert(resource.id().to_string(), crate::domain::resource::RollbackStatus::Failed(e.to_string()));
+                transaction.resource_statuses.insert(
+                    resource.id().to_string(),
+                    crate::domain::resource::RollbackStatus::Failed(e.to_string()),
+                );
                 state_store.save_transaction(&transaction)?;
                 return Err(e.into());
             }

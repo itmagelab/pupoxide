@@ -18,16 +18,24 @@ impl PupoxideAgent {
     }
 
     pub async fn run(&self, dry_run: bool) -> anyhow::Result<()> {
-        tracing::info!("Agent starting for node {} in environment {}", self.node_name, self.environment);
+        tracing::info!(
+            "Agent starting for node {} in environment {}",
+            self.node_name,
+            self.environment
+        );
 
         // 1. Collect facts
         let facts = Facter::collect();
         tracing::info!("Collected {} facts", facts.values.len());
 
         // 2. Fetch catalog
-        let url = format!("{}/catalog/{}/{}", self.server_url, self.environment, self.node_name);
+        let url = format!(
+            "{}/catalog/{}/{}",
+            self.server_url, self.environment, self.node_name
+        );
         let client = reqwest::Client::new();
-        let catalog: Catalog = client.post(url)
+        let catalog: Catalog = client
+            .post(url)
             .json(&facts)
             .send()
             .await?
@@ -35,14 +43,18 @@ impl PupoxideAgent {
             .await
             .context("Failed to parse catalog from server")?;
 
-        tracing::info!("Received catalog with {} resources", catalog.resources.len());
+        tracing::info!(
+            "Received catalog with {} resources",
+            catalog.resources.len()
+        );
 
         // 3. Apply changes with rollback support
         let state_dir = std::path::PathBuf::from("/tmp/pupoxide");
         let backup_store = crate::infrastructure::BackupStore::new(state_dir.join("backups"));
         let state_store = crate::infrastructure::StateStore::new(state_dir.join("state"));
 
-        crate::application::execute_transaction(catalog, &backup_store, &state_store, dry_run).await?;
+        crate::application::execute_transaction(catalog, &backup_store, &state_store, dry_run)
+            .await?;
 
         tracing::info!("Catalog application finished successfully");
         Ok(())

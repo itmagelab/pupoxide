@@ -1,9 +1,9 @@
-use std::path::PathBuf;
-use std::collections::HashMap;
+use crate::domain::Facts;
+use crate::domain::error::{DomainError, Result};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
-use crate::domain::error::{Result, DomainError};
-use crate::domain::Facts;
+use std::collections::HashMap;
+use std::path::PathBuf;
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,7 +64,7 @@ impl Hiera {
             for path_pattern in paths {
                 let path_str = self.interpolate(&path_pattern, facts);
                 let file_path = self.data_dir.join(&path_str);
-                
+
                 debug!("Checking Hiera file: {:?}", file_path);
 
                 if file_path.exists() {
@@ -104,7 +104,7 @@ impl Hiera {
     fn read_yaml_value(&self, path: &PathBuf, key: &str) -> Result<Option<Value>> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| DomainError::Hiera(format!("Failed to read data file: {}", e)))?;
-        
+
         // We parse as generic Value to handle scalar, array, or map
         let yaml_map: serde_yaml::Value = serde_yaml::from_str(&content)
             .map_err(|e| DomainError::Hiera(format!("Failed to parse data file: {}", e)))?;
@@ -114,7 +114,7 @@ impl Hiera {
                 let key_val = serde_yaml::Value::String(key.to_string());
                 Ok(map.get(&key_val).cloned())
             }
-            _ => Ok(None)
+            _ => Ok(None),
         }
     }
 }

@@ -1,6 +1,6 @@
 #![deny(clippy::unwrap_used)]
-pub mod domain;
 pub mod application;
+pub mod domain;
 pub mod infrastructure;
 pub mod interface;
 

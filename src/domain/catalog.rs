@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
 use crate::domain::resource::Resource;
 use chrono;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Catalog {

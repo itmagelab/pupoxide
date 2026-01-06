@@ -1,6 +1,6 @@
+use crate::domain::error::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::domain::error::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -126,7 +126,7 @@ pub trait ResourceProvider: Send + Sync {
     /// Returns the current state of the resource on the system.
     /// If full is true, the provider SHOULD attempt to return the full content for backup.
     async fn get_state(&self, resource: &Resource, full: bool) -> Result<ResourceState>;
-    
+
     /// Applies the desired state to the system
     async fn apply(&self, resource: &Resource) -> Result<()>;
 }

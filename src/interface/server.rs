@@ -1,13 +1,13 @@
-use axum::{
-    extract::{Path, State},
-    routing::post,
-    Json, Router,
-};
-use std::sync::Arc;
 use crate::application::engine::PupoxideEngine;
 use crate::application::loader::EnvironmentLoader;
 use crate::domain::catalog::Catalog;
 use crate::domain::facts::Facts;
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    routing::post,
+};
+use std::sync::Arc;
 
 pub struct MasterState {
     pub engine: PupoxideEngine,
@@ -37,19 +37,18 @@ async fn get_catalog(
     Json(facts): Json<Facts>,
 ) -> Result<Json<Catalog>, ServerError> {
     // 1. Find manifest
-    let manifest_path = state.loader.get_site_manifest(&env)
+    let manifest_path = state
+        .loader
+        .get_site_manifest(&env)
         .map_err(|e| ServerError(StatusCode::NOT_FOUND, e.to_string()))?;
-    
+
     let modules_path = state.loader.get_modules_path(&env);
 
     // 2. Compile catalog
-    let catalog = state.engine.run_manifest_with_modules(
-        manifest_path,
-        modules_path,
-        node,
-        env,
-        facts
-    ).map_err(|e| ServerError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let catalog = state
+        .engine
+        .run_manifest_with_modules(manifest_path, modules_path, node, env, facts)
+        .map_err(|e| ServerError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(catalog))
 }

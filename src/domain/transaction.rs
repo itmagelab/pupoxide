@@ -1,7 +1,7 @@
-use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
-use crate::domain::resource::RollbackStatus;
 use crate::domain::catalog::Catalog;
+use crate::domain::resource::RollbackStatus;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {

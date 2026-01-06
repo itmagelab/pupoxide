@@ -1,7 +1,7 @@
-use std::path::PathBuf;
-use std::fs;
-use sha2::{Sha256, Digest};
 use crate::domain::error::{DomainError, Result};
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::PathBuf;
 
 pub struct BackupStore {
     root: PathBuf,
@@ -19,8 +19,9 @@ impl BackupStore {
 
         if !path.exists() {
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| DomainError::Internal(format!("Failed to create backup dir: {}", e)))?;
+                fs::create_dir_all(parent).map_err(|e| {
+                    DomainError::Internal(format!("Failed to create backup dir: {}", e))
+                })?;
             }
             fs::write(&path, content)
                 .map_err(|e| DomainError::Internal(format!("Failed to write backup: {}", e)))?;

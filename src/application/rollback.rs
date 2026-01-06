@@ -1,4 +1,4 @@
-use crate::domain::{Transaction, Catalog, Resource, FileResource, ResourceState, Ensure};
+use crate::domain::{Catalog, Ensure, FileResource, Resource, ResourceState, Transaction};
 use crate::infrastructure::BackupStore;
 use std::collections::HashMap;
 
@@ -20,7 +20,9 @@ impl RollbackEngine {
 
         for resource in original_resources {
             if let Some(original_state) = transaction.original_states.get(resource.id()) {
-                if let Some(rollback_res) = self.invert_resource(&resource, original_state, &transaction.backups) {
+                if let Some(rollback_res) =
+                    self.invert_resource(&resource, original_state, &transaction.backups)
+                {
                     rollback_resources.push(rollback_res);
                 }
             }
@@ -34,10 +36,10 @@ impl RollbackEngine {
     }
 
     fn invert_resource(
-        &self, 
-        resource: &Resource, 
-        original_state: &ResourceState, 
-        backups: &HashMap<String, String>
+        &self,
+        resource: &Resource,
+        original_state: &ResourceState,
+        backups: &HashMap<String, String>,
     ) -> Option<Resource> {
         match resource {
             Resource::File(file) => {
@@ -49,11 +51,21 @@ impl RollbackEngine {
                             ..file.clone()
                         }))
                     }
-                    ResourceState::Ensure(Ensure::Present) | ResourceState::Full { ensure: Ensure::Present, .. } => {
+                    ResourceState::Ensure(Ensure::Present)
+                    | ResourceState::Full {
+                        ensure: Ensure::Present,
+                        ..
+                    } => {
                         // Was present, need to restore content if we have it
                         let content = if let Some(hash) = backups.get(&file.id) {
-                            self.backup_store.retrieve(hash).ok().and_then(|c| String::from_utf8(c).ok())
-                        } else if let ResourceState::Full { content: Some(c), .. } = original_state {
+                            self.backup_store
+                                .retrieve(hash)
+                                .ok()
+                                .and_then(|c| String::from_utf8(c).ok())
+                        } else if let ResourceState::Full {
+                            content: Some(c), ..
+                        } = original_state
+                        {
                             String::from_utf8(c.clone()).ok()
                         } else {
                             None
@@ -73,10 +85,12 @@ impl RollbackEngine {
                     ResourceState::Ensure(e) => e.clone(),
                     ResourceState::Full { ensure, .. } => ensure.clone(),
                 };
-                Some(Resource::Directory(crate::domain::resource::DirectoryResource {
-                    ensure,
-                    ..dir.clone()
-                }))
+                Some(Resource::Directory(
+                    crate::domain::resource::DirectoryResource {
+                        ensure,
+                        ..dir.clone()
+                    },
+                ))
             }
             Resource::Meta(_) => None,
         }

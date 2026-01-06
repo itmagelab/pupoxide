@@ -1,5 +1,5 @@
+use crate::domain::error::{DomainError, Result};
 use std::path::PathBuf;
-use crate::domain::error::{Result, DomainError};
 
 #[derive(Debug, Clone)]
 pub struct EnvironmentLoader {
@@ -13,7 +13,8 @@ impl EnvironmentLoader {
 
     /// Finds the entry point manifest for a given environment (site.rhai)
     pub fn get_site_manifest(&self, env_name: &str) -> Result<PathBuf> {
-        let path = self.base_path
+        let path = self
+            .base_path
             .join("environments")
             .join(env_name)
             .join("manifests")
@@ -22,7 +23,10 @@ impl EnvironmentLoader {
         if path.exists() {
             Ok(path)
         } else {
-            Err(DomainError::Internal(format!("Site manifest not found at: {}", path.display())))
+            Err(DomainError::Internal(format!(
+                "Site manifest not found at: {}",
+                path.display()
+            )))
         }
     }
 
@@ -36,7 +40,8 @@ impl EnvironmentLoader {
 
     /// Finds a module's entry point (init.rhai)
     pub fn get_module_manifest(&self, env_name: &str, module_name: &str) -> Result<PathBuf> {
-        let path = self.get_modules_path(env_name)
+        let path = self
+            .get_modules_path(env_name)
             .join(module_name)
             .join("manifests")
             .join("init.rhai");
@@ -44,7 +49,11 @@ impl EnvironmentLoader {
         if path.exists() {
             Ok(path)
         } else {
-            Err(DomainError::Internal(format!("Module '{}' not found at: {}", module_name, path.display())))
+            Err(DomainError::Internal(format!(
+                "Module '{}' not found at: {}",
+                module_name,
+                path.display()
+            )))
         }
     }
 }

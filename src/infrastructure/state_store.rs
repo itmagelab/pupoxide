@@ -1,6 +1,9 @@
-use std::path::PathBuf;
+use crate::domain::{
+    Transaction,
+    error::{DomainError, Result},
+};
 use std::fs;
-use crate::domain::{Transaction, error::{DomainError, Result}};
+use std::path::PathBuf;
 
 pub struct StateStore {
     root: PathBuf,
@@ -17,23 +20,26 @@ impl StateStore {
             fs::create_dir_all(parent)
                 .map_err(|e| DomainError::Internal(format!("Failed to create state dir: {}", e)))?;
         }
-        let json = serde_json::to_string_pretty(transaction)
-            .map_err(|e| DomainError::Internal(format!("Failed to serialize transaction: {}", e)))?;
+        let json = serde_json::to_string_pretty(transaction).map_err(|e| {
+            DomainError::Internal(format!("Failed to serialize transaction: {}", e))
+        })?;
         fs::write(path, json)
             .map_err(|e| DomainError::Internal(format!("Failed to write transaction: {}", e)))?;
-        
+
         // Update 'latest' pointer
         let latest_path = self.root.join("latest_transaction");
-        fs::write(latest_path, &transaction.id)
-            .map_err(|e| DomainError::Internal(format!("Failed to update latest transaction: {}", e)))?;
+        fs::write(latest_path, &transaction.id).map_err(|e| {
+            DomainError::Internal(format!("Failed to update latest transaction: {}", e))
+        })?;
 
         Ok(())
     }
 
     pub fn load_transaction(&self, id: &str) -> Result<Transaction> {
         let path = self.get_transaction_path(id);
-        let json = fs::read_to_string(path)
-            .map_err(|e| DomainError::Internal(format!("Failed to read transaction {}: {}", id, e)))?;
+        let json = fs::read_to_string(path).map_err(|e| {
+            DomainError::Internal(format!("Failed to read transaction {}: {}", id, e))
+        })?;
         serde_json::from_str(&json)
             .map_err(|e| DomainError::Internal(format!("Failed to deserialize transaction: {}", e)))
     }
