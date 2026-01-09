@@ -4,15 +4,11 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum Ensure {
+    #[default]
     Present,
     Absent,
-}
-
-impl Default for Ensure {
-    fn default() -> Self {
-        Self::Present
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
