@@ -5,22 +5,26 @@ edition = "2024"
 
 [dependencies]
 tokio = { version = "1.41", features = ["full"] }
-sea-orm = { version = "1.1", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros"] }
-thiserror = "1.0"
+sea-orm = { version = "1.1", features = [
+  "sqlx-postgres",
+  "runtime-tokio-rustls",
+  "macros",
+] }
+thiserror = "2.0"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-validator = { version = "0.19", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 clap = { version = "4.5", features = ["derive"] }
 async-trait = "0.1"
 rhai = { version = "1.19", features = ["sync"] }
-axum = "0.7"
-reqwest = { version = "0.12", features = ["json"] }
+axum = "0.8"
+reqwest = { version = "0.13.1", features = ["json"] }
 chrono = "0.4"
-sysinfo = "0.33"
+sysinfo = "0.37"
 sha2 = "0.10"
 nix = { version = "0.30.1", features = ["user", "fs"] }
 
