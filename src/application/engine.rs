@@ -1,7 +1,7 @@
 use crate::domain::catalog::Catalog;
 use crate::domain::error::{DomainError, Result};
 use crate::domain::facts::Facts;
-use crate::domain::resource::{Ensure, FileResource, MetaKind, MetaResource, Resource};
+use crate::domain::resource::{Ensure, FileResource, ExecResource, MetaKind, MetaResource, Resource};
 use crate::infrastructure::hiera::Hiera;
 use rhai::{Dynamic, Engine, Map, NativeCallContext, Scope};
 use std::cell::RefCell;
@@ -177,6 +177,78 @@ impl PupoxideEngine {
                 owner,
                 group,
                 mode,
+            });
+
+            exec_ctx
+                .resources
+                .lock()
+                .expect("Failed to lock resources")
+                .push(resource.clone());
+            resource
+        });
+
+        // The 'exec' function
+        engine.register_fn("exec", move |command: String, params: Map| {
+            let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| {
+                ctx.borrow()
+                    .clone()
+                    .expect("Execution context must be set during Rhai evaluation")
+            });
+
+            let creates = params
+                .get("creates")
+                .and_then(|v| v.clone().try_cast::<String>())
+                .map(PathBuf::from);
+
+            let unless = params
+                .get("unless")
+                .and_then(|v| v.clone().try_cast::<String>());
+
+            let cwd = params
+                .get("cwd")
+                .and_then(|v| v.clone().try_cast::<String>())
+                .map(PathBuf::from);
+
+            let environment = params
+                .get("environment")
+                .and_then(|v| v.clone().try_cast::<Map>())
+                .map(|map| {
+                    map.into_iter()
+                        .filter_map(|(k, v)| {
+                            v.try_cast::<String>().map(|s| (k.to_string(), s))
+                        })
+                        .collect::<std::collections::HashMap<String, String>>()
+                });
+
+            let mut dependencies = Vec::new();
+            let stack = exec_ctx
+                .module_stack
+                .lock()
+                .expect("Failed to lock module stack");
+            if let Some(curr_mod) = stack.last() {
+                dependencies.push(format!("ModuleStart[{}]", curr_mod));
+            }
+            drop(stack);
+
+            if let Some(req) = params.get("require") {
+                if let Some(dep_res) = req.clone().try_cast::<Resource>() {
+                    dependencies.push(dep_res.id().to_string());
+                } else if let Some(dep_id) = req.clone().try_cast::<String>() {
+                    dependencies.push(dep_id);
+                } else if let Some(m_h) = req.clone().try_cast::<ModuleHandle>() {
+                    dependencies.push(m_h.end_id);
+                }
+            }
+
+            let resource = Resource::Exec(ExecResource {
+                id: format!("Exec[{}]", command),
+                command,
+                creates,
+                unless,
+                cwd,
+                environment,
+                dependencies,
+                backup: false,
             });
 
             exec_ctx

@@ -58,6 +58,18 @@ pub struct MetaResource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, validator::Validate)]
+pub struct ExecResource {
+    pub id: String,
+    pub command: String,
+    pub creates: Option<PathBuf>,
+    pub unless: Option<String>,
+    pub cwd: Option<PathBuf>,
+    pub environment: Option<std::collections::HashMap<String, String>>,
+    pub dependencies: Vec<String>,
+    pub backup: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, validator::Validate)]
 pub struct DirectoryResource {
     pub id: String,
     pub path: PathBuf,
@@ -74,6 +86,7 @@ pub struct DirectoryResource {
 pub enum Resource {
     File(FileResource),
     Directory(DirectoryResource),
+    Exec(ExecResource),
     Meta(MetaResource),
 }
 
@@ -82,6 +95,7 @@ impl Resource {
         match self {
             Resource::File(f) => &f.id,
             Resource::Directory(d) => &d.id,
+            Resource::Exec(e) => &e.id,
             Resource::Meta(m) => &m.id,
         }
     }
@@ -90,6 +104,7 @@ impl Resource {
         match self {
             Resource::File(f) => &f.dependencies,
             Resource::Directory(d) => &d.dependencies,
+            Resource::Exec(e) => &e.dependencies,
             Resource::Meta(m) => &m.dependencies,
         }
     }
@@ -104,6 +119,11 @@ impl Resource {
             Resource::Directory(d) => {
                 if !d.dependencies.contains(&dep_id) {
                     d.dependencies.push(dep_id);
+                }
+            }
+            Resource::Exec(e) => {
+                if !e.dependencies.contains(&dep_id) {
+                    e.dependencies.push(dep_id);
                 }
             }
             Resource::Meta(m) => {

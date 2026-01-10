@@ -34,6 +34,7 @@ impl ResourceProvider for FsAdapter {
                 };
                 Ok(ResourceState::Ensure(ensure))
             }
+            Resource::Exec(_) => Ok(ResourceState::Ensure(Ensure::Present)),
             Resource::Meta(_) => Ok(ResourceState::Ensure(Ensure::Present)),
         }
     }
@@ -42,6 +43,7 @@ impl ResourceProvider for FsAdapter {
         match resource {
             Resource::File(file) => self.apply_file(file).await,
             Resource::Directory(dir) => self.apply_directory(dir).await,
+            Resource::Exec(_) => Ok(()),
             Resource::Meta(_) => Ok(()),
         }
     }

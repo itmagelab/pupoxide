@@ -1,6 +1,6 @@
 use crate::domain::catalog::Catalog;
-use crate::domain::resource::ResourceProvider;
-use crate::infrastructure::FsAdapter;
+use crate::domain::resource::{Resource, ResourceProvider};
+use crate::infrastructure::{ExecAdapter, FsAdapter};
 use crate::infrastructure::{BackupStore, StateStore};
 use anyhow::Result;
 
@@ -10,7 +10,8 @@ pub async fn execute_transaction(
     state_store: &StateStore,
     dry_run: bool,
 ) -> Result<()> {
-    let adapter = FsAdapter;
+    let fs_adapter = FsAdapter;
+    let exec_adapter = ExecAdapter;
     let transaction_id = format!("tx_{}", chrono::Utc::now().timestamp());
     let mut transaction =
         crate::domain::transaction::Transaction::new(transaction_id.clone(), catalog.clone());
@@ -34,7 +35,12 @@ pub async fn execute_transaction(
             continue;
         }
 
-        let state = adapter.get_state(resource, backup_needed).await?;
+        // Select appropriate adapter based on resource type
+        let state = match resource {
+            Resource::Exec(_) => exec_adapter.get_state(resource, backup_needed).await?,
+            _ => fs_adapter.get_state(resource, backup_needed).await?,
+        };
+
         transaction
             .original_states
             .insert(resource.id().to_string(), state.clone());
@@ -49,8 +55,13 @@ pub async fn execute_transaction(
             transaction.backups.insert(resource.id().to_string(), hash);
         }
 
-        // 3. Apply changes
-        match adapter.apply(resource).await {
+        // 3. Apply changes using appropriate adapter
+        let apply_result = match resource {
+            Resource::Exec(_) => exec_adapter.apply(resource).await,
+            _ => fs_adapter.apply(resource).await,
+        };
+
+        match apply_result {
             Ok(_) => {
                 transaction.resource_statuses.insert(
                     resource.id().to_string(),

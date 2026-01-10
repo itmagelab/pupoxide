@@ -92,6 +92,7 @@ impl RollbackEngine {
                     },
                 ))
             }
+            Resource::Exec(_) => None, // Exec resources are stateless, no rollback needed
             Resource::Meta(_) => None,
         }
     }
