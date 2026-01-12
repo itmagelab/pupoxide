@@ -2,7 +2,7 @@ use crate::domain::catalog::Catalog;
 use crate::domain::error::{DomainError, Result};
 use crate::domain::facts::Facts;
 use crate::domain::resource::Resource;
-use crate::infrastructure::hiera::Hiera;
+use crate::infrastructure::stash::Stash;
 use rhai::{Dynamic, Engine, Map, Scope};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -45,12 +45,12 @@ pub struct ModuleHandle {
 pub struct PupoxideEngine {
     engine: Arc<Engine>,
     module_path: Arc<Mutex<Option<PathBuf>>>,
-    hiera: Arc<Option<Hiera>>,
+    stash: Arc<Option<Stash>>,
 }
 
 pub struct PupoxideEngineBuilder {
     engine: Engine,
-    hiera: Option<Hiera>,
+    stash: Option<Stash>,
     module_path: Arc<Mutex<Option<PathBuf>>>,
 }
 
@@ -58,13 +58,13 @@ impl PupoxideEngineBuilder {
     pub fn new() -> Self {
         Self {
             engine: Engine::new(),
-            hiera: None,
+            stash: None,
             module_path: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub fn with_hiera(mut self, hiera: Hiera) -> Self {
-        self.hiera = Some(hiera);
+    pub fn with_stash(mut self, stash: Stash) -> Self {
+        self.stash = Some(stash);
         self
     }
 
@@ -74,8 +74,8 @@ impl PupoxideEngineBuilder {
     }
 
     pub fn register_defaults(mut self) -> Self {
-        let hiera_arc = Arc::new(self.hiera.clone());
-        dsl::register_all(&mut self.engine, hiera_arc, self.module_path.clone());
+        let stash_arc = Arc::new(self.stash.clone());
+        dsl::register_all(&mut self.engine, stash_arc, self.module_path.clone());
         self
     }
 
@@ -83,16 +83,16 @@ impl PupoxideEngineBuilder {
         PupoxideEngine {
             engine: Arc::new(self.engine),
             module_path: self.module_path,
-            hiera: Arc::new(self.hiera),
+            stash: Arc::new(self.stash),
         }
     }
 }
 
 impl PupoxideEngine {
-    pub fn new(hiera: Option<Hiera>) -> Self {
+    pub fn new(stash: Option<Stash>) -> Self {
         let mut builder = PupoxideEngineBuilder::new();
-        if let Some(h) = hiera {
-            builder = builder.with_hiera(h);
+        if let Some(s) = stash {
+            builder = builder.with_stash(s);
         }
         builder.register_defaults().build()
     }

@@ -75,18 +75,18 @@ async fn main() -> Result<()> {
             let manifest_path = loader.get_site_manifest(&environment)?;
             let modules_path = loader.get_modules_path(&environment);
 
-            let mut hiera = None;
+            let mut stash = None;
             let env_path = loader
                 .get_modules_path(&environment)
                 .parent()
                 .unwrap()
                 .to_path_buf();
-            match pupoxide::infrastructure::Hiera::new(env_path) {
-                Ok(h) => hiera = h,
-                Err(e) => tracing::warn!("Failed to load Hiera: {}", e),
+            match pupoxide::infrastructure::Stash::new(env_path) {
+                Ok(s) => stash = s,
+                Err(e) => tracing::warn!("Failed to load Stash: {}", e),
             }
 
-            let engine = PupoxideEngine::new(hiera);
+            let engine = PupoxideEngine::new(stash);
             let facts = pupoxide::infrastructure::Facter::collect();
             let catalog = engine.run_manifest_with_modules(
                 manifest_path,

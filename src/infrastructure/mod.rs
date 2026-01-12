@@ -1,11 +1,11 @@
+pub mod adapter;
 pub mod backup_store;
 pub mod facter;
-pub mod adapter;
 pub mod state_store;
 
+pub use adapter::*;
 pub use backup_store::*;
 pub use facter::*;
-pub use adapter::*;
 pub use state_store::*;
-pub mod hiera;
-pub use hiera::*;
+pub mod stash;
+pub use stash::*;

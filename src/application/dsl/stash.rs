@@ -1,33 +1,29 @@
+use crate::application::engine::CURRENT_EXEC_CTX;
+use crate::infrastructure::stash::Stash;
 use rhai::{Dynamic, Engine};
 use std::sync::Arc;
-use crate::infrastructure::hiera::Hiera;
-use crate::application::engine::CURRENT_EXEC_CTX;
 
-pub fn register(engine: &mut Engine, hiera: Arc<Option<Hiera>>) {
-    let h = hiera.clone();
+pub fn register(engine: &mut Engine, stash: Arc<Option<Stash>>) {
+    let s = stash.clone();
     engine.register_fn("lookup", move |key: String| -> Dynamic {
-        lookup_internal(&h, key, None)
+        lookup_internal(&s, key, None)
     });
 
-    let h2 = hiera.clone();
+    let s2 = stash.clone();
     engine.register_fn(
         "lookup",
         move |key: String, default_val: Dynamic| -> Dynamic {
-            lookup_internal(&h2, key, Some(default_val))
+            lookup_internal(&s2, key, Some(default_val))
         },
     );
 }
 
-fn lookup_internal(
-    hiera: &Option<Hiera>,
-    key: String,
-    default_val: Option<Dynamic>,
-) -> Dynamic {
+fn lookup_internal(stash: &Option<Stash>, key: String, default_val: Option<Dynamic>) -> Dynamic {
     let exec_ctx =
         CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("Execution context must be set"));
 
-    if let Some(hiera_impl) = hiera.as_ref() {
-        if let Some(val) = hiera_impl.lookup(&key, &exec_ctx.facts) {
+    if let Some(stash_impl) = stash.as_ref() {
+        if let Some(val) = stash_impl.lookup(&key, &exec_ctx.facts) {
             return match val {
                 serde_yaml::Value::String(s) => Dynamic::from(s),
                 serde_yaml::Value::Bool(b) => Dynamic::from(b),

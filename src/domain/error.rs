@@ -11,8 +11,8 @@ pub enum DomainError {
     #[error("Validation error: {0}")]
     Validation(String),
 
-    #[error("Hiera error: {0}")]
-    Hiera(String),
+    #[error("Stash error: {0}")]
+    Stash(String),
 }
 
 pub type Result<T> = std::result::Result<T, DomainError>;

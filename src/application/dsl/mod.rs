@@ -1,22 +1,22 @@
+use crate::infrastructure::stash::Stash;
 use rhai::Engine;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use crate::infrastructure::hiera::Hiera;
 
 pub mod context;
-pub mod types;
-pub mod hiera;
-pub mod resources;
-pub mod operators;
 pub mod modules;
+pub mod operators;
+pub mod resources;
+pub mod stash;
+pub mod types;
 
 pub fn register_all(
     engine: &mut Engine,
-    hiera: Arc<Option<Hiera>>,
+    stash: Arc<Option<Stash>>,
     module_path: Arc<Mutex<Option<PathBuf>>>,
 ) {
     types::register(engine);
-    hiera::register(engine, hiera);
+    stash::register(engine, stash);
     operators::register(engine);
     modules::register(engine, module_path);
     resources::register(engine);
