@@ -21,15 +21,17 @@ pub struct ExecutionContext {
     pub included_modules: Arc<Mutex<HashSet<String>>>,
     pub module_stack: Arc<Mutex<Vec<String>>>,
     pub facts: Arc<Facts>,
+    pub current_path: Arc<Mutex<PathBuf>>,
 }
 
 impl ExecutionContext {
-    pub fn new(facts: Facts) -> Self {
+    pub fn new(facts: Facts, path: PathBuf) -> Self {
         Self {
             resources: Arc::new(Mutex::new(Vec::new())),
             included_modules: Arc::new(Mutex::new(HashSet::new())),
             module_stack: Arc::new(Mutex::new(Vec::new())),
             facts: Arc::new(facts),
+            current_path: Arc::new(Mutex::new(path)),
         }
     }
 }
@@ -80,11 +82,161 @@ impl PupoxideEngineBuilder {
     }
 
     pub fn build(self) -> PupoxideEngine {
+        let mut engine = self.engine;
+        engine.set_module_resolver(PupoxideModuleResolver {
+            module_path: self.module_path.clone(),
+        });
         PupoxideEngine {
-            engine: Arc::new(self.engine),
+            engine: Arc::new(engine),
             module_path: self.module_path,
             stash: Arc::new(self.stash),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PupoxideModuleResolver {
+    pub module_path: Arc<Mutex<Option<PathBuf>>>,
+}
+
+impl rhai::ModuleResolver for PupoxideModuleResolver {
+    fn resolve(
+        &self,
+        engine: &rhai::Engine,
+        _source_path: Option<&str>,
+        path: &str,
+        pos: rhai::Position,
+    ) -> std::result::Result<Arc<rhai::Module>, Box<rhai::EvalAltResult>> {
+        let exec_ctx = CURRENT_EXEC_CTX.with(|ctx| {
+            ctx.borrow().clone().ok_or_else(|| {
+                Box::new(rhai::EvalAltResult::ErrorRuntime(
+                    "Execution context not found".into(),
+                    pos,
+                ))
+            })
+        })?;
+
+        let mut current_p = exec_ctx
+            .current_path
+            .lock()
+            .expect("Failed to lock current path");
+        let parent_dir = current_p.parent().unwrap_or(&current_p);
+
+        let full_path = if path.starts_with(".") {
+            // Relative path
+            let mut p = parent_dir.join(path);
+            if p.extension().is_none() {
+                p.set_extension("rhai");
+            }
+            p
+        } else {
+            // Module path
+            let base = self.module_path.lock().expect("Failed to lock module path");
+            if let Some(ref bp) = *base {
+                bp.join(path).join("manifests").join("init.rhai")
+            } else {
+                return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
+                    format!("Module path not set, cannot resolve '{}'", path).into(),
+                    pos,
+                )));
+            }
+        };
+
+        if !full_path.exists() {
+            return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
+                format!("File not found: {}", full_path.display()).into(),
+                pos,
+            )));
+        }
+
+        let module_name = path.to_string();
+        let handle = ModuleHandle {
+            name: module_name.clone(),
+            start_id: format!("ModuleStart[{}]", module_name),
+            end_id: format!("ModuleEnd[{}]", module_name),
+        };
+
+        // Check if already included to avoid recursion if needed,
+        let start_resource_count = exec_ctx
+            .resources
+            .lock()
+            .expect("Failed to lock resources")
+            .len();
+
+        {
+            let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
+            resources.push(Resource::Meta(crate::domain::resource::MetaResource {
+                id: handle.start_id.clone(),
+                kind: crate::domain::resource::MetaKind::ModuleStart,
+                dependencies: Vec::new(),
+            }));
+        }
+
+        exec_ctx
+            .module_stack
+            .lock()
+            .expect("Failed to lock module stack")
+            .push(module_name.clone());
+        let old_path = std::mem::replace(&mut *current_p, full_path.clone());
+        drop(current_p);
+
+        let mut ast = engine.compile_file(full_path.clone()).map_err(|e| {
+            Box::new(rhai::EvalAltResult::ErrorRuntime(
+                format!("Failed to compile import '{}': {}", path, e).into(),
+                pos,
+            ))
+        })?;
+        ast.set_source(path);
+
+        let mut scope = rhai::Scope::new();
+        // Inject facts for the imported module evaluation
+        let mut facts_map = Map::new();
+        for (k, v) in exec_ctx.facts.values.clone() {
+            facts_map.insert(k.into(), v.into());
+        }
+        scope.set_value("facts", facts_map);
+
+        let res = engine.eval_ast_with_scope::<Dynamic>(&mut scope, &ast);
+
+        // Restore path and stack
+        let mut current_p = exec_ctx
+            .current_path
+            .lock()
+            .expect("Failed to lock current path");
+        *current_p = old_path;
+        exec_ctx
+            .module_stack
+            .lock()
+            .expect("Failed to lock module stack")
+            .pop();
+
+        let _ = res.map_err(|e| {
+            Box::new(rhai::EvalAltResult::ErrorRuntime(
+                format!("Failed to evaluate import '{}': {}", path, e).into(),
+                pos,
+            ))
+        })?;
+
+        {
+            let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
+            let mut end_deps = vec![handle.start_id.clone()];
+
+            // Make ModuleEnd depend on all resources created inside this module
+            for i in start_resource_count..resources.len() {
+                end_deps.push(resources[i].id().to_string());
+            }
+
+            resources.push(Resource::Meta(crate::domain::resource::MetaResource {
+                id: handle.end_id.clone(),
+                kind: crate::domain::resource::MetaKind::ModuleEnd,
+                dependencies: end_deps,
+            }));
+        }
+
+        let mut module = rhai::Module::eval_ast_as_new(scope, &ast, engine)?;
+        module.set_var("module_handle", handle);
+
+        Ok(Arc::new(module))
     }
 }
 
@@ -112,7 +264,7 @@ impl PupoxideEngine {
         environment: String,
         facts: Facts,
     ) -> Result<Catalog> {
-        let exec_ctx = ExecutionContext::new(facts.clone());
+        let exec_ctx = ExecutionContext::new(facts.clone(), path.clone());
         let mut scope = Scope::new();
 
         // Inject facts into scope

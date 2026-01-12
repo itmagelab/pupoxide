@@ -1,6 +1,6 @@
-use rhai::{Dynamic, Map};
+use crate::application::engine::{CURRENT_EXEC_CTX, ExecutionContext, ModuleHandle};
 use crate::domain::resource::{Ensure, Resource};
-use crate::application::engine::{ExecutionContext, ModuleHandle, CURRENT_EXEC_CTX};
+use rhai::{Dynamic, Map};
 
 pub struct DslContext;
 
@@ -71,6 +71,13 @@ impl DslContext {
             dependencies.push(dep_id);
         } else if let Some(m_h) = req.clone().try_cast::<ModuleHandle>() {
             dependencies.push(m_h.end_id);
+        } else if let Some(m) = req.clone().try_cast::<rhai::Shared<rhai::Module>>() {
+            if let Some(m_h) = m
+                .get_var("module_handle")
+                .and_then(|v| v.try_cast::<ModuleHandle>())
+            {
+                dependencies.push(m_h.end_id);
+            }
         } else if let Some(arr) = req.try_cast::<rhai::Array>() {
             for item in arr {
                 Self::push_dependency(dependencies, item);
