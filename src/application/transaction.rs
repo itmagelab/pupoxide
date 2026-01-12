@@ -1,17 +1,16 @@
 use crate::domain::catalog::Catalog;
-use crate::domain::resource::{Resource, ResourceProvider};
-use crate::infrastructure::{ExecAdapter, FsAdapter};
+use crate::domain::resource::{ResourceProvider, ResourceState};
 use crate::infrastructure::{BackupStore, StateStore};
 use anyhow::Result;
+use std::sync::Arc;
 
 pub async fn execute_transaction(
     catalog: Catalog,
     backup_store: &BackupStore,
     state_store: &StateStore,
+    provider: Arc<dyn ResourceProvider>,
     dry_run: bool,
 ) -> Result<()> {
-    let fs_adapter = FsAdapter;
-    let exec_adapter = ExecAdapter;
     let transaction_id = format!("tx_{}", chrono::Utc::now().timestamp());
     let mut transaction =
         crate::domain::transaction::Transaction::new(transaction_id.clone(), catalog.clone());
@@ -26,20 +25,13 @@ pub async fn execute_transaction(
             _ => false,
         };
 
-        // Even in dry-run, we might want to know the current state, but for now let's just proceed
-        // If we wanted to report "Would change", we'd need to compare.
-        // For simplicity in this step, we just report intent.
-
         if dry_run {
             tracing::info!(id = %resource.id(), "Would ensure resource");
             continue;
         }
 
-        // Select appropriate adapter based on resource type
-        let state = match resource {
-            Resource::Exec(_) => exec_adapter.get_state(resource, backup_needed).await?,
-            _ => fs_adapter.get_state(resource, backup_needed).await?,
-        };
+        // Use the injected provider for all operations
+        let state = provider.get_state(resource, backup_needed).await?;
 
         transaction
             .original_states
@@ -55,11 +47,8 @@ pub async fn execute_transaction(
             transaction.backups.insert(resource.id().to_string(), hash);
         }
 
-        // 3. Apply changes using appropriate adapter
-        let apply_result = match resource {
-            Resource::Exec(_) => exec_adapter.apply(resource).await,
-            _ => fs_adapter.apply(resource).await,
-        };
+        // 3. Apply changes using the injected provider
+        let apply_result = provider.apply(resource).await;
 
         match apply_result {
             Ok(_) => {

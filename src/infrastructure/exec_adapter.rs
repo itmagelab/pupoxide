@@ -7,6 +7,10 @@ pub struct ExecAdapter;
 
 #[async_trait]
 impl ResourceProvider for ExecAdapter {
+    fn can_handle(&self, resource: &Resource) -> bool {
+        matches!(resource, Resource::Exec(_))
+    }
+
     async fn get_state(&self, resource: &Resource, _full: bool) -> Result<ResourceState> {
         match resource {
             Resource::Exec(exec) => {

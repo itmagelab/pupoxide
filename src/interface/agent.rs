@@ -53,8 +53,20 @@ impl PupoxideAgent {
         let backup_store = crate::infrastructure::BackupStore::new(state_dir.join("backups"));
         let state_store = crate::infrastructure::StateStore::new(state_dir.join("state"));
 
-        crate::application::execute_transaction(catalog, &backup_store, &state_store, dry_run)
-            .await?;
+        // Initialize provider registry with default adapters
+        let mut provider_registry = crate::application::ProviderRegistry::new();
+        provider_registry.register(std::sync::Arc::new(crate::infrastructure::FsAdapter));
+        provider_registry.register(std::sync::Arc::new(crate::infrastructure::ExecAdapter));
+        let provider = std::sync::Arc::new(provider_registry);
+
+        crate::application::execute_transaction(
+            catalog,
+            &backup_store,
+            &state_store,
+            provider,
+            dry_run,
+        )
+        .await?;
 
         tracing::info!("Catalog application finished successfully");
         Ok(())

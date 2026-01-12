@@ -139,6 +139,9 @@ impl Resource {
 /// Every adapter (Infrastructure) must implement this to handle specific resource types.
 #[async_trait::async_trait]
 pub trait ResourceProvider: Send + Sync {
+    /// Returns true if this provider can handle the given resource
+    fn can_handle(&self, resource: &Resource) -> bool;
+
     /// Returns the current state of the resource on the system.
     /// If full is true, the provider SHOULD attempt to return the full content for backup.
     async fn get_state(&self, resource: &Resource, full: bool) -> Result<ResourceState>;

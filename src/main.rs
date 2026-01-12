@@ -23,6 +23,12 @@ async fn main() -> Result<()> {
     let backup_store = pupoxide::infrastructure::BackupStore::new(state_dir.join("backups"));
     let state_store = pupoxide::infrastructure::StateStore::new(state_dir.join("state"));
 
+    // Initialize provider registry with default adapters
+    let mut provider_registry = pupoxide::application::ProviderRegistry::new();
+    provider_registry.register(std::sync::Arc::new(pupoxide::infrastructure::FsAdapter));
+    provider_registry.register(std::sync::Arc::new(pupoxide::infrastructure::ExecAdapter));
+    let provider = std::sync::Arc::new(provider_registry);
+
     match cli.command {
         Commands::Run {
             file,
@@ -57,6 +63,7 @@ async fn main() -> Result<()> {
                 catalog,
                 &backup_store,
                 &state_store,
+                provider,
                 dry_run,
             )
             .await?;
@@ -94,6 +101,7 @@ async fn main() -> Result<()> {
                 catalog,
                 &backup_store,
                 &state_store,
+                provider,
                 dry_run,
             )
             .await?;
@@ -110,10 +118,9 @@ async fn main() -> Result<()> {
             let rollback_engine = pupoxide::application::RollbackEngine::new(backup_store);
             let rollback_catalog = rollback_engine.generate_rollback_catalog(&transaction);
 
-            let adapter = FsAdapter;
             for resource in rollback_catalog.resources {
                 tracing::info!(id = %resource.id(), "Rolling back resource");
-                adapter.apply(&resource).await?;
+                provider.apply(&resource).await?;
             }
 
             tracing::info!("Rollback completed successfully");

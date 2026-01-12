@@ -10,6 +10,10 @@ pub struct FsAdapter;
 
 #[async_trait]
 impl ResourceProvider for FsAdapter {
+    fn can_handle(&self, resource: &Resource) -> bool {
+        matches!(resource, Resource::File(_) | Resource::Directory(_))
+    }
+
     async fn get_state(&self, resource: &Resource, full: bool) -> Result<ResourceState> {
         match resource {
             Resource::File(file) => {
