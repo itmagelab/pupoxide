@@ -1,5 +1,5 @@
 use crate::domain::catalog::Catalog;
-use crate::domain::resource::{ResourceProvider, ResourceState};
+use crate::domain::resource::ResourceProvider;
 use crate::infrastructure::{BackupStore, StateStore};
 use anyhow::Result;
 use std::sync::Arc;

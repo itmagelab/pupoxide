@@ -3,7 +3,6 @@ use anyhow::Result;
 use clap::Parser;
 use pupoxide::application::{EnvironmentLoader, PupoxideEngine};
 use pupoxide::domain::resource::ResourceProvider;
-use pupoxide::infrastructure::FsAdapter;
 use pupoxide::interface::{Cli, Commands};
 use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
