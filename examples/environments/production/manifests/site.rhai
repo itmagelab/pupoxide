@@ -2,8 +2,8 @@
 // Demonstrating Object Maps, Automatic Collection, and Modules
 
 // 1. Include modules with dependencies
-// This ensures 'common' is applied before 'nginx'
-include("common") -> include("nginx");
+// This ensures 'common' is applied before 'nginx' and 'demo'
+include("common") -> include("nginx") -> include("demo");
 
 // 2. Local resource depending on a module
 let base_path = "/tmp/pupoxide_site_demo";
@@ -30,4 +30,22 @@ exec("echo $CUSTOM_VAR > output.txt", #{
 // Chain exec with file dependency - create directory then list it
 file("/tmp/pupoxide_test_dir", #{ ensure: "present" }) -> exec("ls -la /tmp/pupoxide_test_dir", #{
     unless: "test -f /tmp/pupoxide_dir_listed"
+});
+// 4. Permission examples
+file("/tmp/test_perms.txt", #{
+    ensure: "present",
+    content: "permission test",
+    mode: "600"
+});
+
+directory("/tmp/test_dir_perms", #{
+    ensure: "present",
+    mode: "750"
+});
+
+// 5. Rollback example (with backup enabled)
+file("/tmp/rollback_test.txt", #{
+    ensure: "present",
+    content: "Modified Content",
+    backup: true
 });
