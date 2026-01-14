@@ -3,8 +3,8 @@ use rhai::Engine;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+pub mod composition;
 pub mod context;
-pub mod modules;
 pub mod operators;
 pub mod resources;
 pub mod stash;
@@ -18,6 +18,6 @@ pub fn register_all(
     types::register(engine);
     stash::register(engine, stash);
     operators::register(engine);
-    modules::register(engine, module_path);
+    composition::register(engine, module_path);
     resources::register(engine);
 }

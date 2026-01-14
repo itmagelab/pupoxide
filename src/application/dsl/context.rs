@@ -13,13 +13,32 @@ impl DslContext {
         })
     }
 
-    pub fn add_resource(exec_ctx: &ExecutionContext, resource: Resource) -> Resource {
+    pub fn add_resource(
+        exec_ctx: &ExecutionContext,
+        resource: Resource,
+    ) -> std::result::Result<Resource, Box<rhai::EvalAltResult>> {
+        // Enforce role constraints
+        {
+            let stack = exec_ctx
+                .inclusion_stack
+                .lock()
+                .expect("Failed to lock inclusion stack");
+            if stack.last() == Some(&crate::application::engine::InclusionType::Role)
+                && !matches!(resource, Resource::Meta(_))
+            {
+                return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
+                        format!("Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.", resource.id()).into(),
+                        rhai::Position::NONE,
+                    )));
+            }
+        }
+
         exec_ctx
             .resources
             .lock()
             .expect("Failed to lock resources")
             .push(resource.clone());
-        resource
+        Ok(resource)
     }
 
     pub fn add_dependency_between_ids(lhs_id: &str, rhs_id: &str) {

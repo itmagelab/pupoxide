@@ -7,6 +7,12 @@ pub struct ProviderRegistry {
     providers: Vec<Arc<dyn ResourceProvider>>,
 }
 
+impl Default for ProviderRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProviderRegistry {
     pub fn new() -> Self {
         Self {
@@ -27,7 +33,6 @@ impl ProviderRegistry {
                     "No provider found for resource: {}",
                     resource.id()
                 ))
-                .into()
             })
     }
 }

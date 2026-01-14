@@ -12,7 +12,14 @@ use std::sync::{Arc, Mutex};
 use super::dsl;
 
 thread_local! {
-    pub static CURRENT_EXEC_CTX: RefCell<Option<ExecutionContext>> = RefCell::new(None);
+    pub static CURRENT_EXEC_CTX: RefCell<Option<ExecutionContext>> = const { RefCell::new(None) };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InclusionType {
+    Module,
+    Role,
+    Profile,
 }
 
 #[derive(Clone, Debug)]
@@ -20,6 +27,7 @@ pub struct ExecutionContext {
     pub resources: Arc<Mutex<Vec<Resource>>>,
     pub included_modules: Arc<Mutex<HashSet<String>>>,
     pub module_stack: Arc<Mutex<Vec<String>>>,
+    pub inclusion_stack: Arc<Mutex<Vec<InclusionType>>>,
     pub facts: Arc<Facts>,
     pub current_path: Arc<Mutex<PathBuf>>,
 }
@@ -30,6 +38,7 @@ impl ExecutionContext {
             resources: Arc::new(Mutex::new(Vec::new())),
             included_modules: Arc::new(Mutex::new(HashSet::new())),
             module_stack: Arc::new(Mutex::new(Vec::new())),
+            inclusion_stack: Arc::new(Mutex::new(Vec::new())),
             facts: Arc::new(facts),
             current_path: Arc::new(Mutex::new(path)),
         }
@@ -47,13 +56,19 @@ pub struct ModuleHandle {
 pub struct PupoxideEngine {
     engine: Arc<Engine>,
     module_path: Arc<Mutex<Option<PathBuf>>>,
-    stash: Arc<Option<Stash>>,
+    _stash: Arc<Option<Stash>>,
 }
 
 pub struct PupoxideEngineBuilder {
     engine: Engine,
     stash: Option<Stash>,
     module_path: Arc<Mutex<Option<PathBuf>>>,
+}
+
+impl Default for PupoxideEngineBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PupoxideEngineBuilder {
@@ -89,7 +104,7 @@ impl PupoxideEngineBuilder {
         PupoxideEngine {
             engine: Arc::new(engine),
             module_path: self.module_path,
-            stash: Arc::new(self.stash),
+            _stash: Arc::new(self.stash),
         }
     }
 }

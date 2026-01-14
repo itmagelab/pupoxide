@@ -154,15 +154,12 @@ impl FsAdapter {
         match file.ensure {
             Ensure::Present => {
                 // Auto-create parent directories
-                if let Some(parent) = file.path.parent() {
-                    if !parent.exists() {
-                        fs::create_dir_all(parent).map_err(|e| {
-                            DomainError::Internal(format!(
-                                "Failed to create parent directory: {}",
-                                e
-                            ))
-                        })?;
-                    }
+                if let Some(parent) = file.path.parent()
+                    && !parent.exists()
+                {
+                    fs::create_dir_all(parent).map_err(|e| {
+                        DomainError::Internal(format!("Failed to create parent directory: {}", e))
+                    })?;
                 }
 
                 let mut f = fs::File::create(&file.path)

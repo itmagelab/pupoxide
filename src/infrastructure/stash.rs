@@ -22,7 +22,7 @@ pub struct HierarchyEntry {
 
 #[derive(Clone)]
 pub struct Stash {
-    config_path: PathBuf,
+    _config_path: PathBuf,
     data_dir: PathBuf,
     config: StashConfig,
 }
@@ -43,7 +43,7 @@ impl Stash {
         let data_dir = environment_path.join("data");
 
         Ok(Some(Self {
-            config_path,
+            _config_path: config_path,
             data_dir,
             config,
         }))
@@ -81,10 +81,10 @@ impl Stash {
         }
 
         // Check defaults if configured
-        if let Some(defaults) = &self.config.defaults {
-            if let Some(v) = defaults.get(key) {
-                return Some(v.clone());
-            }
+        if let Some(defaults) = &self.config.defaults
+            && let Some(v) = defaults.get(key)
+        {
+            return Some(v.clone());
         }
 
         None

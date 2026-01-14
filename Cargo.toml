@@ -2,6 +2,14 @@
 name = "pupoxide"
 version = "0.1.0"
 edition = "2024"
+description = "A high-performance, memory-safe, declarative configuration management tool inspired by Puppet."
+authors = ["iTmage Lab <contact@itmagelab.ru>"]
+license = "MIT"
+readme = "README.md"
+repository = "https://gitverse.ru/itmagelab/pupoxide"
+homepage = "https://gitverse.ru/itmagelab/pupoxide"
+keywords = ["scm", "puppet", "automation", "devops", "IaC"]
+categories = ["config", "os"]
 
 [dependencies]
 tokio = { version = "1.41", features = ["full"] }

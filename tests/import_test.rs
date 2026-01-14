@@ -4,18 +4,18 @@ use tempfile::tempdir;
 
 #[tokio::test]
 async fn test_native_import_and_dependencies() {
-    let base_dir = tempdir().unwrap();
+    let base_dir = tempdir().expect("Test invariant failed");
     let env_dir = base_dir.path().join("environments").join("prod");
     let modules_dir = env_dir.join("modules");
     let site_manifest_dir = env_dir.join("manifests");
 
-    fs::create_dir_all(&site_manifest_dir).unwrap();
-    fs::create_dir_all(&modules_dir).unwrap();
+    fs::create_dir_all(&site_manifest_dir).expect("Test invariant failed");
+    fs::create_dir_all(&modules_dir).expect("Test invariant failed");
 
     // 1. Create Module structure
     let mod_dir = modules_dir.join("test_mod");
     let mod_manifests = mod_dir.join("manifests");
-    fs::create_dir_all(&mod_manifests).unwrap();
+    fs::create_dir_all(&mod_manifests).expect("Test invariant failed");
 
     // init.rhai: imports service.rhai
     fs::write(
@@ -26,7 +26,7 @@ async fn test_native_import_and_dependencies() {
         svc; // Return the module handle
         "#,
     )
-    .unwrap();
+    .expect("Test invariant failed");
 
     // service.rhai: defines a file
     fs::write(
@@ -35,7 +35,7 @@ async fn test_native_import_and_dependencies() {
         file("/tmp/service", #{});
         "#,
     )
-    .unwrap();
+    .expect("Test invariant failed");
 
     // 2. Site manifest with dependencies between imports and resources
     let site_script = r#"
@@ -44,7 +44,7 @@ async fn test_native_import_and_dependencies() {
         f1 -> my_mod;
     "#;
     let site_rhai = site_manifest_dir.join("site.rhai");
-    fs::write(&site_rhai, site_script).unwrap();
+    fs::write(&site_rhai, site_script).expect("Test invariant failed");
 
     // 3. Execute
     let loader = EnvironmentLoader::new(base_dir.path().to_path_buf());
@@ -57,7 +57,7 @@ async fn test_native_import_and_dependencies() {
             "prod".to_string(),
             pupoxide::domain::Facts::default(),
         )
-        .unwrap();
+        .expect("Test invariant failed");
 
     let resources = catalog.resources;
 
@@ -74,7 +74,7 @@ async fn test_native_import_and_dependencies() {
         resources
             .iter()
             .position(|r| r.id() == id)
-            .expect(&format!("Missing {}", id))
+            .unwrap_or_else(|| panic!("Missing {}", id))
     };
 
     let pos_top = find_pos("File[/tmp/top]");
@@ -114,20 +114,20 @@ async fn test_native_import_and_dependencies() {
 
 #[tokio::test]
 async fn test_relative_include() {
-    let base_dir = tempdir().unwrap();
+    let base_dir = tempdir().expect("Test invariant failed");
     let site_manifest_dir = base_dir.path().join("manifests");
-    fs::create_dir_all(&site_manifest_dir).unwrap();
+    fs::create_dir_all(&site_manifest_dir).expect("Test invariant failed");
 
     let site_script = r#"
         include("./sub");
     "#;
     let site_rhai = site_manifest_dir.join("site.rhai");
-    fs::write(&site_rhai, site_script).unwrap();
+    fs::write(&site_rhai, site_script).expect("Test invariant failed");
 
     let sub_script = r#"
         file("/tmp/sub", #{});
     "#;
-    fs::write(site_manifest_dir.join("sub.rhai"), sub_script).unwrap();
+    fs::write(site_manifest_dir.join("sub.rhai"), sub_script).expect("Test invariant failed");
 
     let engine = PupoxideEngine::new(None);
     let catalog = engine
@@ -137,7 +137,7 @@ async fn test_relative_include() {
             "local".to_string(),
             pupoxide::domain::Facts::default(),
         )
-        .unwrap();
+        .expect("Test invariant failed");
 
     assert!(catalog.resources.iter().any(|r| r.id() == "File[/tmp/sub]"));
 }

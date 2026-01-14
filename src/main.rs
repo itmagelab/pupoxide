@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
             let env_path = loader
                 .get_modules_path(&environment)
                 .parent()
-                .unwrap()
+                .expect("Environment path must have a parent")
                 .to_path_buf();
             match pupoxide::infrastructure::Stash::new(env_path) {
                 Ok(s) => stash = s,

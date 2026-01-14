@@ -18,6 +18,11 @@ pub async fn execute_transaction(
     tracing::info!(id = %transaction_id, dry_run = %dry_run, "Starting transaction");
 
     for resource in &catalog.resources {
+        // Skip Meta resources as they are internal markers and don't need a provider
+        if let crate::domain::resource::Resource::Meta(_) = resource {
+            continue;
+        }
+
         // 1. Snapshot original state
         let backup_needed = match resource {
             crate::domain::resource::Resource::File(f) => f.backup,

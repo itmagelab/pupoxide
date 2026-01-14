@@ -19,12 +19,11 @@ impl RollbackEngine {
         original_resources.reverse();
 
         for resource in original_resources {
-            if let Some(original_state) = transaction.original_states.get(resource.id()) {
-                if let Some(rollback_res) =
+            if let Some(original_state) = transaction.original_states.get(resource.id())
+                && let Some(rollback_res) =
                     self.invert_resource(&resource, original_state, &transaction.backups)
-                {
-                    rollback_resources.push(rollback_res);
-                }
+            {
+                rollback_resources.push(rollback_res);
             }
         }
 

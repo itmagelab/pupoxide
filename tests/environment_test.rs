@@ -6,14 +6,14 @@ use tempfile::tempdir;
 
 #[tokio::test]
 async fn test_environment_loading_and_execution() {
-    let base_dir = tempdir().unwrap();
+    let base_dir = tempdir().expect("Test invariant failed");
     let env_path = base_dir.path().join("environments").join("prod");
     let manifests_path = env_path.join("manifests");
-    fs::create_dir_all(&manifests_path).unwrap();
+    fs::create_dir_all(&manifests_path).expect("Test invariant failed");
 
     let _site_rhai = manifests_path.join("site.rhai");
     let target_file = base_dir.path().join("site_result.txt");
-    let target_file_str = target_file.to_str().unwrap();
+    let target_file_str = target_file.to_str().expect("Test invariant failed");
 
     // Rhai script with dependencies and Maps
     let script = format!(
@@ -26,7 +26,7 @@ async fn test_environment_loading_and_execution() {
         "#
     );
     let manifest_path = manifests_path.join("site.rhai");
-    fs::write(&manifest_path, script).unwrap();
+    fs::write(&manifest_path, script).expect("Test invariant failed");
 
     // 2. Execute Rhai
     let engine = PupoxideEngine::new(None);
@@ -37,7 +37,7 @@ async fn test_environment_loading_and_execution() {
             "prod".to_string(),
             pupoxide::domain::Facts::default(),
         )
-        .unwrap();
+        .expect("Test invariant failed");
 
     // Should have 2 resources in order: Dir then File
     // ... (omitting unchanged lines in replacement for brevity if possible, but I'll provide full block)
@@ -49,38 +49,38 @@ async fn test_environment_loading_and_execution() {
     // 3. Apply via adapter
     let adapter = FsAdapter;
     for res in resources {
-        adapter.apply(&res).await.unwrap();
+        adapter.apply(&res).await.expect("Test invariant failed");
     }
 
     // 4. Verify result
     assert!(target_file.exists());
-    let content = fs::read_to_string(&target_file).unwrap();
+    let content = fs::read_to_string(&target_file).expect("Test invariant failed");
     assert_eq!(content, "Config from simplified Rhai!");
 }
 
 #[tokio::test]
 async fn test_module_inclusion() {
-    let base_dir = tempdir().unwrap();
+    let base_dir = tempdir().expect("Test invariant failed");
     let env_dir = base_dir.path().join("environments").join("prod");
     let modules_dir = env_dir.join("modules");
     let module_manifest_dir = modules_dir.join("test_mod").join("manifests");
     let site_manifest_dir = env_dir.join("manifests");
 
-    fs::create_dir_all(&module_manifest_dir).unwrap();
-    fs::create_dir_all(&site_manifest_dir).unwrap();
+    fs::create_dir_all(&module_manifest_dir).expect("Test invariant failed");
+    fs::create_dir_all(&site_manifest_dir).expect("Test invariant failed");
 
     let target_file = base_dir.path().join("module_result.txt");
-    let target_file_str = target_file.to_str().unwrap();
+    let target_file_str = target_file.to_str().expect("Test invariant failed");
 
     // 1. Create module manifest
     let module_script =
         format!(r#"file("{target_file_str}", #{{ ensure: "present", content: "from module" }});"#);
-    fs::write(module_manifest_dir.join("init.rhai"), module_script).unwrap();
+    fs::write(module_manifest_dir.join("init.rhai"), module_script).expect("Test invariant failed");
 
     // 2. Create site manifest that includes the module
     let site_script = r#"include("test_mod");"#;
     let site_rhai = site_manifest_dir.join("site.rhai");
-    fs::write(&site_rhai, site_script).unwrap();
+    fs::write(&site_rhai, site_script).expect("Test invariant failed");
 
     // 3. Execute
     let loader = EnvironmentLoader::new(base_dir.path().to_path_buf());
@@ -93,7 +93,7 @@ async fn test_module_inclusion() {
             "prod".to_string(),
             pupoxide::domain::Facts::default(),
         )
-        .unwrap();
+        .expect("Test invariant failed");
 
     // 4. Verify
     let resources = catalog.resources;
@@ -107,24 +107,24 @@ async fn test_module_inclusion() {
 
     let adapter = FsAdapter;
     for res in resources {
-        adapter.apply(&res).await.unwrap();
+        adapter.apply(&res).await.expect("Test invariant failed");
     }
 
     assert!(target_file.exists());
-    assert_eq!(fs::read_to_string(&target_file).unwrap(), "from module");
+    assert_eq!(fs::read_to_string(&target_file).expect("Test invariant failed"), "from module");
 }
 
 #[tokio::test]
 async fn test_facts_availability_in_rhai() {
-    let base_dir = tempdir().unwrap();
+    let base_dir = tempdir().expect("Test invariant failed");
     let site_rhai = base_dir.path().join("site.rhai");
     let target_file = base_dir.path().join("facts_result.txt");
-    let target_file_str = target_file.to_str().unwrap();
+    let target_file_str = target_file.to_str().expect("Test invariant failed");
 
     let script = format!(
         r#"file("{target_file_str}", #{{ ensure: "present", content: "Hostname is " + facts.hostname }});"#
     );
-    fs::write(&site_rhai, script).unwrap();
+    fs::write(&site_rhai, script).expect("Test invariant failed");
 
     let mut facts = pupoxide::domain::Facts::new();
     facts.insert("hostname".to_string(), "test_host".to_string());
@@ -132,47 +132,47 @@ async fn test_facts_availability_in_rhai() {
     let engine = PupoxideEngine::new(None);
     let catalog = engine
         .run_manifest(site_rhai, "node1".to_string(), "env1".to_string(), facts)
-        .unwrap();
+        .expect("Test invariant failed");
 
     let adapter = FsAdapter;
     adapter
         .apply(
-            &catalog
+            catalog
                 .resources
                 .iter()
                 .find(|r| r.id().contains("facts_result"))
-                .unwrap(),
+                .expect("Test invariant failed"),
         )
         .await
-        .unwrap();
+        .expect("Test invariant failed");
 
-    let content = fs::read_to_string(&target_file).unwrap();
+    let content = fs::read_to_string(&target_file).expect("Test invariant failed");
     assert_eq!(content, "Hostname is test_host");
 }
 
 #[tokio::test]
 async fn test_module_dependency_chain() {
-    let base_dir = tempdir().unwrap();
+    let base_dir = tempdir().expect("Test invariant failed");
     let env_dir = base_dir.path().join("environments").join("prod");
     let modules_dir = env_dir.join("modules");
     let site_manifest_dir = env_dir.join("manifests");
 
-    fs::create_dir_all(&site_manifest_dir).unwrap();
+    fs::create_dir_all(&site_manifest_dir).expect("Test invariant failed");
 
     // Create Module A
     let mod_a_dir = modules_dir.join("mod_a").join("manifests");
-    fs::create_dir_all(&mod_a_dir).unwrap();
-    fs::write(mod_a_dir.join("init.rhai"), r#"file("/tmp/a", #{})"#).unwrap();
+    fs::create_dir_all(&mod_a_dir).expect("Test invariant failed");
+    fs::write(mod_a_dir.join("init.rhai"), r#"file("/tmp/a", #{})"#).expect("Test invariant failed");
 
     // Create Module B
     let mod_b_dir = modules_dir.join("mod_b").join("manifests");
-    fs::create_dir_all(&mod_b_dir).unwrap();
-    fs::write(mod_b_dir.join("init.rhai"), r#"file("/tmp/b", #{})"#).unwrap();
+    fs::create_dir_all(&mod_b_dir).expect("Test invariant failed");
+    fs::write(mod_b_dir.join("init.rhai"), r#"file("/tmp/b", #{})"#).expect("Test invariant failed");
 
     // Site manifest with dependency: A must complete before B starts
     let site_script = r#"include("mod_a") -> include("mod_b");"#;
     let site_rhai = site_manifest_dir.join("site.rhai");
-    fs::write(&site_rhai, site_script).unwrap();
+    fs::write(&site_rhai, site_script).expect("Test invariant failed");
 
     let loader = EnvironmentLoader::new(base_dir.path().to_path_buf());
     let engine = PupoxideEngine::new(None);
@@ -184,7 +184,7 @@ async fn test_module_dependency_chain() {
             "prod".to_string(),
             pupoxide::domain::Facts::default(),
         )
-        .unwrap();
+        .expect("Test invariant failed");
 
     let resources = catalog.resources;
 
