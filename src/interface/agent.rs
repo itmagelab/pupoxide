@@ -50,7 +50,6 @@ impl PupoxideAgent {
 
         // 3. Apply changes with rollback support
         let state_dir = std::path::PathBuf::from("/tmp/pupoxide");
-        let backup_store = crate::infrastructure::BackupStore::new(state_dir.join("backups"));
         let state_store = crate::infrastructure::StateStore::new(state_dir.join("state"));
 
         // Initialize provider registry with default adapters
@@ -61,7 +60,6 @@ impl PupoxideAgent {
 
         crate::application::execute_transaction(
             catalog,
-            &backup_store,
             &state_store,
             provider,
             dry_run,

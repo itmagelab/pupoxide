@@ -55,10 +55,5 @@ pub enum Commands {
         #[arg(long, default_value = "false")]
         dry_run: bool,
     },
-    /// Rollback a previous transaction
-    Rollback {
-        /// ID of the transaction to rollback (optional, defaults to latest)
-        #[arg(short, long)]
-        transaction_id: Option<String>,
-    },
+
 }

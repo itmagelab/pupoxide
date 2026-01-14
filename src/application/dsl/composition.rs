@@ -31,8 +31,8 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
 
             let handle = ModuleHandle {
                 name: name.clone(),
-                start_id: format!("{:?}[{}]", inc_type, name),
-                end_id: format!("{:?}End[{}]", inc_type, name),
+                start_id: format!("ModuleStart[{}]", name),
+                end_id: format!("ModuleEnd[{}]", name),
             };
 
             let mut included = exec_ctx
@@ -91,10 +91,19 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
 
                 {
                     let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
+                    let mut dependencies = Vec::new();
+
+                    // Add dependency on parent module if exists
+                    let stack = exec_ctx.module_stack.lock().expect("Failed to lock module stack");
+                    if let Some(parent) = stack.last() {
+                        dependencies.push(format!("ModuleStart[{}]", parent));
+                    }
+                    drop(stack);
+
                     resources.push(Resource::Meta(MetaResource {
                         id: handle.start_id.clone(),
                         kind: MetaKind::ModuleStart,
-                        dependencies: Vec::new(),
+                        dependencies,
                     }));
                 }
 

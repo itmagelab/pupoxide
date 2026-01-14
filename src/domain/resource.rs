@@ -14,20 +14,14 @@ pub enum Ensure {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ResourceState {
     Ensure(Ensure),
-    /// Current state including content (used for backups)
+    /// Current state including content
     Full {
         ensure: Ensure,
         content: Option<Vec<u8>>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum RollbackStatus {
-    Success,
-    Failed(String),
-    SkippedNoBackup,
-    Pending,
-}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, validator::Validate, PartialEq)]
 pub struct FileResource {
@@ -36,8 +30,6 @@ pub struct FileResource {
     pub ensure: Ensure,
     pub content: Option<String>,
     pub dependencies: Vec<String>,
-    pub backup: bool,
-    pub max_backup_size: Option<u64>,
     pub owner: Option<String>,
     pub group: Option<String>,
     pub mode: Option<String>,
@@ -66,7 +58,6 @@ pub struct ExecResource {
     pub cwd: Option<PathBuf>,
     pub environment: Option<std::collections::HashMap<String, String>>,
     pub dependencies: Vec<String>,
-    pub backup: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, validator::Validate)]
@@ -75,7 +66,6 @@ pub struct DirectoryResource {
     pub path: PathBuf,
     pub ensure: Ensure,
     pub dependencies: Vec<String>,
-    pub backup: bool,
     pub owner: Option<String>,
     pub group: Option<String>,
     pub mode: Option<String>,
@@ -143,7 +133,7 @@ pub trait ResourceProvider: Send + Sync {
     fn can_handle(&self, resource: &Resource) -> bool;
 
     /// Returns the current state of the resource on the system.
-    /// If full is true, the provider SHOULD attempt to return the full content for backup.
+    /// If full is true, the provider SHOULD attempt to return the full content.
     async fn get_state(&self, resource: &Resource, full: bool) -> Result<ResourceState>;
 
     /// Applies the desired state to the system

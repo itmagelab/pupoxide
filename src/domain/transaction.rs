@@ -1,5 +1,5 @@
 use crate::domain::catalog::Catalog;
-use crate::domain::resource::RollbackStatus;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -10,9 +10,7 @@ pub struct Transaction {
     pub original_catalog: Catalog,
     /// Maps resource ID to its original state before application
     pub original_states: HashMap<String, crate::domain::resource::ResourceState>,
-    /// Maps resource ID to its backup hash (if any)
-    pub backups: HashMap<String, String>,
-    pub resource_statuses: HashMap<String, RollbackStatus>,
+
 }
 
 impl Transaction {
@@ -22,8 +20,6 @@ impl Transaction {
             timestamp: chrono::Utc::now().timestamp(),
             original_catalog,
             original_states: HashMap::new(),
-            backups: HashMap::new(),
-            resource_statuses: HashMap::new(),
         }
     }
 }

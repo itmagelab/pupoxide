@@ -14,14 +14,11 @@ pub fn register(engine: &mut Engine) {
             let exec_ctx = DslContext::get_exec_ctx();
             let ensure = DslContext::extract_ensure(&params);
             let dependencies = DslContext::extract_dependencies(&params, &exec_ctx);
-            let backup = DslContext::extract_bool(&params, "backup", false);
-
             let resource = Resource::Directory(crate::domain::resource::DirectoryResource {
                 id: format!("Directory[{}]", path),
                 path: PathBuf::from(path),
                 ensure,
                 dependencies,
-                backup,
                 owner: DslContext::extract_string(&params, "owner"),
                 group: DslContext::extract_string(&params, "group"),
                 mode: DslContext::extract_string(&params, "mode"),
@@ -64,7 +61,6 @@ pub fn register(engine: &mut Engine) {
                 cwd,
                 environment,
                 dependencies,
-                backup: false,
             });
 
             DslContext::add_resource(&exec_ctx, resource)
@@ -80,15 +76,7 @@ pub fn register(engine: &mut Engine) {
             let exec_ctx = DslContext::get_exec_ctx();
             let ensure = DslContext::extract_ensure(&params);
             let dependencies = DslContext::extract_dependencies(&params, &exec_ctx);
-            let backup = DslContext::extract_bool(&params, "backup", true);
-
             let content = DslContext::extract_string(&params, "content");
-            let max_backup_size = params.get("max_backup_size").and_then(|v| {
-                v.clone()
-                    .try_cast::<i64>()
-                    .map(|i| i as u64)
-                    .or_else(|| v.clone().try_cast::<u64>())
-            });
 
             let resource = Resource::File(FileResource {
                 id: format!("File[{}]", path),
@@ -96,8 +84,6 @@ pub fn register(engine: &mut Engine) {
                 ensure,
                 content,
                 dependencies,
-                backup,
-                max_backup_size,
                 owner: DslContext::extract_string(&params, "owner"),
                 group: DslContext::extract_string(&params, "group"),
                 mode: DslContext::extract_string(&params, "mode"),

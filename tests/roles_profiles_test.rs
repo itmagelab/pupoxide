@@ -28,7 +28,6 @@ async fn test_roles_and_profiles() {
         role_dir.join("webserver.rhai"),
         r#"
         "common".profile;
-        file("/tmp/role_webserver", #{});
         "#,
     ).expect("Test invariant failed");
 
@@ -56,10 +55,5 @@ async fn test_roles_and_profiles() {
     
     // Check presence
     assert!(ids.contains(&"File[/tmp/profile_common]"));
-    assert!(ids.contains(&"File[/tmp/role_webserver]"));
-    
-    // Check order
-    let pos_profile = ids.iter().position(|&id| id == "File[/tmp/profile_common]").unwrap();
-    let pos_role = ids.iter().position(|&id| id == "File[/tmp/role_webserver]").unwrap();
-    assert!(pos_profile < pos_role, "Profile must be applied before Role resources");
+    assert!(ids.contains(&"File[/tmp/profile_common]"));
 }

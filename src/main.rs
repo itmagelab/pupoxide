@@ -2,7 +2,7 @@
 use anyhow::Result;
 use clap::Parser;
 use pupoxide::application::{EnvironmentLoader, PupoxideEngine};
-use pupoxide::domain::resource::ResourceProvider;
+
 use pupoxide::interface::{Cli, Commands};
 use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -19,7 +19,6 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let state_dir = PathBuf::from("/tmp/pupoxide");
-    let backup_store = pupoxide::infrastructure::BackupStore::new(state_dir.join("backups"));
     let state_store = pupoxide::infrastructure::StateStore::new(state_dir.join("state"));
 
     // Initialize provider registry with default adapters
@@ -60,7 +59,6 @@ async fn main() -> Result<()> {
 
             pupoxide::application::execute_transaction(
                 catalog,
-                &backup_store,
                 &state_store,
                 provider,
                 dry_run,
@@ -98,32 +96,13 @@ async fn main() -> Result<()> {
 
             pupoxide::application::execute_transaction(
                 catalog,
-                &backup_store,
                 &state_store,
                 provider,
                 dry_run,
             )
             .await?;
         }
-        Commands::Rollback { transaction_id } => {
-            let transaction = if let Some(id) = transaction_id {
-                state_store.load_transaction(&id)?
-            } else {
-                state_store.load_latest_transaction()?
-            };
 
-            tracing::info!(id = %transaction.id, "Starting rollback");
-
-            let rollback_engine = pupoxide::application::RollbackEngine::new(backup_store);
-            let rollback_catalog = rollback_engine.generate_rollback_catalog(&transaction);
-
-            for resource in rollback_catalog.resources {
-                tracing::info!(id = %resource.id(), "Rolling back resource");
-                provider.apply(&resource).await?;
-            }
-
-            tracing::info!("Rollback completed successfully");
-        }
         Commands::Master { port } => {
             let loader = EnvironmentLoader::new(cli.config);
             let engine = PupoxideEngine::new(None); // Master might need to load Hiera per request/environment later
