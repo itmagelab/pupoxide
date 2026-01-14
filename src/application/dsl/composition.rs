@@ -31,8 +31,8 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
 
             let handle = ModuleHandle {
                 name: name.clone(),
-                start_id: format!("ModuleStart[{}]", name),
-                end_id: format!("ModuleEnd[{}]", name),
+                start_id: format!("{:?}Start[{}]", inc_type, name),
+                end_id: format!("{:?}End[{}]", inc_type, name),
             };
 
             let mut included = exec_ctx
@@ -95,10 +95,19 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
 
                     // Add dependency on parent module if exists
                     let stack = exec_ctx.module_stack.lock().expect("Failed to lock module stack");
+                    let inc_stack = exec_ctx.inclusion_stack.lock().expect("Failed to lock inclusion stack");
+                    
                     if let Some(parent) = stack.last() {
-                        dependencies.push(format!("ModuleStart[{}]", parent));
+                         // Stack has parent name. Inclusion stack has parent type.
+                         // They are pushed in sync.
+                         // stack is [parent]
+                         // inc_stack is [parent_type]
+                         if let Some(parent_type) = inc_stack.last() {
+                             dependencies.push(format!("{:?}Start[{}]", parent_type, parent));
+                         }
                     }
                     drop(stack);
+                    drop(inc_stack);
 
                     resources.push(Resource::Meta(MetaResource {
                         id: handle.start_id.clone(),

@@ -71,10 +71,19 @@ impl DslContext {
             .module_stack
             .lock()
             .expect("Failed to lock module stack");
+            
+        let inc_stack = exec_ctx
+            .inclusion_stack
+            .lock()
+            .expect("Failed to lock inclusion stack");
+
         if let Some(curr_mod) = stack.last() {
-            dependencies.push(format!("ModuleStart[{}]", curr_mod));
+             // Default to Module if stack is misaligned (should not happen)
+             let curr_type = inc_stack.last().unwrap_or(&crate::application::engine::InclusionType::Module);
+            dependencies.push(format!("{:?}Start[{}]", curr_type, curr_mod));
         }
         drop(stack);
+        drop(inc_stack);
 
         if let Some(req) = params.get("require") {
             Self::push_dependency(&mut dependencies, req.clone());
