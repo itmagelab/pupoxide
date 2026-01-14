@@ -18,7 +18,7 @@ pub async fn start_master(state: MasterState, port: u16) -> anyhow::Result<()> {
     let shared_state = Arc::new(state);
 
     let app = Router::new()
-        .route("/catalog/:env/:node", post(get_catalog))
+        .route("/catalog/{env}/{node}", post(get_catalog))
         .with_state(shared_state);
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;

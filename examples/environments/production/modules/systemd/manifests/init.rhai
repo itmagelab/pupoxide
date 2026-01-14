@@ -20,6 +20,3 @@ fn systemd_unit(name, params) {
         });
     }
 }
-
-// Export functions to be used by importers
-export systemd_unit;
