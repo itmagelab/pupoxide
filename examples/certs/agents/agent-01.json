@@ -1,0 +1,8 @@
+{
+  "node_id": "agent-01",
+  "cert_cn": "agent-01",
+  "certificate_pem": "-----BEGIN CERTIFICATE-----\nMIIBWjCCAQGgAwIBAgIUY12dOtuer1nQj61RMWHIHKSLY6owCgYIKoZIzj0EAwIw\nITEfMB0GA1UEAwwWcmNnZW4gc2VsZiBzaWduZWQgY2VydDAeFw0yNjAxMTcyMDE3\nMDlaFw0yNzAxMTcyMDE3MDlaMCExHzAdBgNVBAMMFnJjZ2VuIHNlbGYgc2lnbmVk\nIGNlcnQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQ2WFIUhsCYvEezI3d4Jc3w\nhCpMdAm/upW+OSEs9o3aufQMDQDLsziD9+bG3EUbe1IOw4pbIctrqs1JxrGqOnqh\noxcwFTATBgNVHREEDDAKgghhZ2VudC0wMTAKBggqhkjOPQQDAgNHADBEAiBSYdSl\nV4WNvznh+9tfazGqL5nlX4ioverND0FvgWVjYAIgdkgsLtkIEqVsZpC1jlr4NOny\n7guH9mtN65AmNIZ/jDo=\n-----END CERTIFICATE-----\n",
+  "approved_at": 1768681029,
+  "last_seen": null,
+  "is_active": true
+}

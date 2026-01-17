@@ -112,17 +112,21 @@ async fn main() -> Result<()> {
             let loader = EnvironmentLoader::new(config_dir.clone());
             let engine = PupoxideEngine::new(None);
             
+            // Create certs subdirectory for all certificate-related files
+            let certs_dir = config_dir.join("certs");
+            tokio::fs::create_dir_all(&certs_dir).await?;
+            
             // Initialize CA certificate
-            let ca_cert_path = config_dir.join("ca.pem");
-            let ca_key_path = config_dir.join("ca.key");
+            let ca_cert_path = certs_dir.join("ca.pem");
+            let ca_key_path = certs_dir.join("ca.key");
             let ca = pupoxide::infrastructure::CertificateAuthority::new_or_load(&ca_cert_path, &ca_key_path)?;
             
             // Save CA if not existed
             ca.save(&ca_cert_path, &ca_key_path)?;
             
             // Initialize bootstrap request manager and agent registry
-            let bootstrap_requests_dir = config_dir.join("bootstrap_requests");
-            let agents_dir = config_dir.join("agents");
+            let bootstrap_requests_dir = certs_dir.join("bootstrap_requests");
+            let agents_dir = certs_dir.join("agents");
             
             // Create subdirectories
             tokio::fs::create_dir_all(&bootstrap_requests_dir).await?;

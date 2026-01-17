@@ -41,7 +41,7 @@ This runs an automated 8-step test that demonstrates the three-phase bootstrap p
 You can preview changes without applying them by using the `--dry-run` flag with `run`, `apply`, or `agent` commands:
 
 ```bash
-cargo run -- run --dry-run --file ./examples/environments/production/manifests/site.rhai
+cargo run -- --config ./examples run --dry-run --file ./examples/environments/production/manifests/site.rhai
 ```
 
 This will log actions as "Would ensure resource" instead of executing them.
@@ -51,7 +51,7 @@ This will log actions as "Would ensure resource" instead of executing them.
 You can execute any `.rhai` script directly:
 
 ```bash
-cargo run -- run --file ./examples/environments/production/manifests/site.rhai
+cargo run -- --config ./examples run --file ./examples/environments/production/manifests/site.rhai
 ```
 
 
@@ -95,7 +95,7 @@ Pupoxide implements a secure three-phase bootstrap process:
 **Start the Master Server:**
 
 ```bash
-cargo run -- master start --port 8080
+cargo run -- --config ./examples master start --port 8080
 ```
 
 The Master will automatically:
@@ -107,10 +107,11 @@ The Master will automatically:
 
 ```bash
 # Agent submits CSR request (no token needed)
-cargo run -- agent \
+cargo run -- --config ./examples agent \
   --server http://localhost:8080 \
   --node agent-01 \
   --environment production \
+  --cert-dir ./examples/certs/agents/agent-01 \
   --bootstrap
 ```
 
@@ -128,13 +129,13 @@ Output:
 
 ```bash
 # List all pending requests
-cargo run -- master list
+cargo run -- --config ./examples master list
 
 # Approve a request
-cargo run -- master sign --node agent-01
+cargo run -- --config ./examples master sign --node agent-01
 
 # Or reject it
-cargo run -- master reject --node agent-01
+cargo run -- --config ./examples master reject --node agent-01
 ```
 
 Output:
@@ -146,18 +147,20 @@ Output:
 
 ```bash
 # Poll until approved (checks every 5 seconds, default timeout 10 minutes)
-cargo run -- agent \
+cargo run -- --config ./examples agent \
   --server http://localhost:8080 \
   --node agent-01 \
   --environment production \
-  --bootstrap --check
+  --cert-dir ./examples/certs/agents/agent-01 \
+  --check
 
 # Or with custom timeout
-cargo run -- agent \
+cargo run -- --config ./examples agent \
   --server http://localhost:8080 \
   --node agent-01 \
   --environment production \
-  --bootstrap --check --check-timeout 300
+  --cert-dir ./examples/certs/agents/agent-01 \
+  --check --check-timeout 300
 ```
 
 Output when approved:
@@ -178,7 +181,8 @@ Once bootstrap is complete and approved, run the agent normally:
 cargo run -- --config ./examples agent \
   --server https://localhost:8080 \
   --node agent-01 \
-  --environment production
+  --environment production \
+  --cert-dir ./examples/certs/agents/agent-01
 ```
 
 The agent will:
@@ -191,17 +195,24 @@ The agent will:
 
 ```
 /etc/pupoxide/
-├── ca.pem                           # CA public certificate
-├── ca.key                           # CA private key
-├── bootstrap_requests/
-│   ├── agent-01.json               # Pending CSR (status: pending)
-│   ├── agent-02.json               # Approved CSR (status: approved)
-│   └── agent-03.json               # Rejected CSR (status: rejected)
-└── agents/
-    ├── agent-01.pem                # Signed certificate
-    ├── agent-01.json               # Metadata (registration time, etc)
-    ├── agent-02.pem
-    └── agent-02.json
+├── environments/
+│   └── production/
+│       ├── manifests/
+│       ├── modules/
+│       ├── role/
+│       └── profile/
+├── certs/                           # Certificate management (CA and agents)
+│   ├── ca.pem                       # CA public certificate
+│   ├── ca.key                       # CA private key
+│   ├── bootstrap_requests/
+│   │   ├── agent-01.json           # Pending CSR (status: pending)
+│   │   ├── agent-02.json           # Approved CSR (status: approved)
+│   │   └── agent-03.json           # Rejected CSR (status: rejected)
+│   └── agents/
+│       ├── agent-01.pem            # Signed certificate
+│       ├── agent-01.json           # Metadata (registration time, etc)
+│       ├── agent-02.pem
+│       └── agent-02.json
 ```
 
 #### Security Features
