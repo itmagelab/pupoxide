@@ -90,7 +90,7 @@ Dependencies can be defined in two ways:
 ```
 
 ## 6. Development Conventions
-*   **No Unwraps**: Use `Result` and `DomainError`.
+*   **No Unwraps**: Use `Result` and `anyhow::Error`.
 *   **Async**: Infrastructure layer is async (Tokio).
 *   **Idempotency**: Always check existence/state before applying changes.
 *   **Stable IDs**: Resource IDs must be deterministic (e.g., `Type[Path/Name]`).

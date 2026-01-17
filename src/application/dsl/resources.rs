@@ -24,7 +24,12 @@ pub fn register(engine: &mut Engine) {
                 mode: DslContext::extract_string(&params, "mode"),
             });
 
-            DslContext::add_resource(&exec_ctx, resource)
+            DslContext::add_resource(&exec_ctx, resource).map_err(|e| {
+                Box::new(rhai::EvalAltResult::ErrorRuntime(
+                    e.to_string().into(),
+                    rhai::Position::NONE,
+                ))
+            })
         },
     );
 
@@ -63,7 +68,12 @@ pub fn register(engine: &mut Engine) {
                 dependencies,
             });
 
-            DslContext::add_resource(&exec_ctx, resource)
+            DslContext::add_resource(&exec_ctx, resource).map_err(|e| {
+                Box::new(rhai::EvalAltResult::ErrorRuntime(
+                    e.to_string().into(),
+                    rhai::Position::NONE,
+                ))
+            })
         },
     );
 
@@ -89,7 +99,12 @@ pub fn register(engine: &mut Engine) {
                 mode: DslContext::extract_string(&params, "mode"),
             });
 
-            DslContext::add_resource(&exec_ctx, resource)
+            DslContext::add_resource(&exec_ctx, resource).map_err(|e| {
+                Box::new(rhai::EvalAltResult::ErrorRuntime(
+                    e.to_string().into(),
+                    rhai::Position::NONE,
+                ))
+            })
         },
     );
 }

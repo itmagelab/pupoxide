@@ -1,6 +1,8 @@
 use crate::application::engine::{CURRENT_EXEC_CTX, ExecutionContext, ModuleHandle};
 use crate::domain::resource::{Ensure, Resource};
 use rhai::{Dynamic, Map};
+use tracing::warn;
+use anyhow::Result;
 
 pub struct DslContext;
 
@@ -16,34 +18,37 @@ impl DslContext {
     pub fn add_resource(
         exec_ctx: &ExecutionContext,
         resource: Resource,
-    ) -> std::result::Result<Resource, Box<rhai::EvalAltResult>> {
+    ) -> Result<Resource> {
         // Enforce role constraints
         {
             let stack = exec_ctx
                 .inclusion_stack
                 .lock()
-                .expect("Failed to lock inclusion stack");
+                .map_err(|e| anyhow::anyhow!("Failed to lock inclusion stack: {}", e))?;
             if stack.last() == Some(&crate::application::engine::InclusionType::Role)
                 && !matches!(resource, Resource::Meta(_))
             {
-                return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                        format!("Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.", resource.id()).into(),
-                        rhai::Position::NONE,
-                    )));
+                return Err(anyhow::anyhow!("Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.", resource.id()));
             }
         }
 
         exec_ctx
             .resources
             .lock()
-            .expect("Failed to lock resources")
+            .map_err(|e| anyhow::anyhow!("Failed to lock resources: {}", e))?
             .push(resource.clone());
         Ok(resource)
     }
 
     pub fn add_dependency_between_ids(lhs_id: &str, rhs_id: &str) {
         let exec_ctx = Self::get_exec_ctx();
-        let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
+        let mut resources = match exec_ctx.resources.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                warn!("Failed to lock resources: {}", e);
+                return;
+            }
+        };
         if let Some(res) = resources.iter_mut().find(|r| r.id() == rhs_id) {
             res.add_dependency(lhs_id.to_string());
         }
@@ -69,15 +74,21 @@ impl DslContext {
 
         // Получаем информацию о текущем модуле и типе включения за одну блокировку
         let current_info = {
-            let stack = exec_ctx
-                .module_stack
-                .lock()
-                .expect("Failed to lock module stack");
+            let stack = match exec_ctx.module_stack.lock() {
+                Ok(guard) => guard,
+                Err(e) => {
+                    warn!("Failed to lock module stack: {}", e);
+                    return dependencies;
+                }
+            };
                 
-            let inc_stack = exec_ctx
-                .inclusion_stack
-                .lock()
-                .expect("Failed to lock inclusion stack");
+            let inc_stack = match exec_ctx.inclusion_stack.lock() {
+                Ok(guard) => guard,
+                Err(e) => {
+                    warn!("Failed to lock inclusion stack: {}", e);
+                    return dependencies;
+                }
+            };
 
             let current_module = stack.last().cloned();
             // Default to Module if stack is misaligned (should not happen)

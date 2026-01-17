@@ -1,5 +1,5 @@
 use crate::domain::Facts;
-use crate::domain::error::{DomainError, Result};
+use crate::domain::error::Result;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::collections::HashMap;
@@ -35,10 +35,10 @@ impl Stash {
         }
 
         let content = std::fs::read_to_string(&config_path)
-            .map_err(|e| DomainError::Stash(format!("Failed to read stash.yaml: {}", e)))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read stash.yaml: {}", e))?;
 
         let config: StashConfig = serde_yaml::from_str(&content)
-            .map_err(|e| DomainError::Stash(format!("Failed to parse stash.yaml: {}", e)))?;
+            .map_err(|e| anyhow::anyhow!("Failed to parse stash.yaml: {}", e))?;
 
         let data_dir = environment_path.join("data");
 
@@ -103,11 +103,11 @@ impl Stash {
 
     fn read_yaml_value(&self, path: &PathBuf, key: &str) -> Result<Option<Value>> {
         let content = std::fs::read_to_string(path)
-            .map_err(|e| DomainError::Stash(format!("Failed to read data file: {}", e)))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read data file: {}", e))?;
 
         // We parse as generic Value to handle scalar, array, or map
         let yaml_map: serde_yaml::Value = serde_yaml::from_str(&content)
-            .map_err(|e| DomainError::Stash(format!("Failed to parse data file: {}", e)))?;
+            .map_err(|e| anyhow::anyhow!("Failed to parse data file: {}", e))?;
 
         match yaml_map {
             Value::Mapping(map) => {

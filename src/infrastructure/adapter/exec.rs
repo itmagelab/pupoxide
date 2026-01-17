@@ -1,4 +1,4 @@
-use crate::domain::error::{DomainError, Result};
+use crate::domain::error::Result;
 use crate::domain::resource::{Ensure, ExecResource, Resource, ResourceProvider, ResourceState};
 use async_trait::async_trait;
 use tokio::process::Command;
@@ -57,7 +57,7 @@ impl ExecAdapter {
                 .status()
                 .await
                 .map_err(|e| {
-                    DomainError::Internal(format!("Failed to execute unless command: {}", e))
+                    anyhow::anyhow!("Failed to execute unless command: {}", e)
                 })?;
 
             if status.success() {
@@ -97,17 +97,17 @@ impl ExecAdapter {
 
         // Execute command
         let output = cmd.output().await.map_err(|e| {
-            DomainError::Internal(format!("Failed to execute command '{}': {}", exec.command, e))
+            anyhow::anyhow!("Failed to execute command '{}': {}", exec.command, e)
         })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(DomainError::Internal(format!(
+            return Err(anyhow::anyhow!(
                 "Command '{}' failed with exit code {:?}: {}",
                 exec.command,
                 output.status.code(),
                 stderr
-            )));
+            ));
         }
 
         tracing::info!(

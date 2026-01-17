@@ -1,6 +1,6 @@
 use crate::domain::{
     Transaction,
-    error::{DomainError, Result},
+    error::Result,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -18,18 +18,18 @@ impl StateStore {
         let path = self.get_transaction_path(&transaction.id);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
-                .map_err(|e| DomainError::Internal(format!("Failed to create state dir: {}", e)))?;
+                .map_err(|e| anyhow::anyhow!("Failed to create state dir: {}", e))?;
         }
         let json = serde_json::to_string_pretty(transaction).map_err(|e| {
-            DomainError::Internal(format!("Failed to serialize transaction: {}", e))
+            anyhow::anyhow!("Failed to serialize transaction: {}", e)
         })?;
         fs::write(path, json)
-            .map_err(|e| DomainError::Internal(format!("Failed to write transaction: {}", e)))?;
+            .map_err(|e| anyhow::anyhow!("Failed to write transaction: {}", e))?;
 
         // Update 'latest' pointer
         let latest_path = self.root.join("latest_transaction");
         fs::write(latest_path, &transaction.id).map_err(|e| {
-            DomainError::Internal(format!("Failed to update latest transaction: {}", e))
+            anyhow::anyhow!("Failed to update latest transaction: {}", e)
         })?;
 
         Ok(())
@@ -38,16 +38,16 @@ impl StateStore {
     pub fn load_transaction(&self, id: &str) -> Result<Transaction> {
         let path = self.get_transaction_path(id);
         let json = fs::read_to_string(path).map_err(|e| {
-            DomainError::Internal(format!("Failed to read transaction {}: {}", id, e))
+            anyhow::anyhow!("Failed to read transaction {}: {}", id, e)
         })?;
         serde_json::from_str(&json)
-            .map_err(|e| DomainError::Internal(format!("Failed to deserialize transaction: {}", e)))
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize transaction: {}", e))
     }
 
     pub fn load_latest_transaction(&self) -> Result<Transaction> {
         let latest_path = self.root.join("latest_transaction");
         let id = fs::read_to_string(latest_path)
-            .map_err(|e| DomainError::Internal(format!("No previous transaction found: {}", e)))?;
+            .map_err(|e| anyhow::anyhow!("No previous transaction found: {}", e))?;
         self.load_transaction(id.trim())
     }
 

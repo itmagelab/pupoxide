@@ -1,4 +1,4 @@
-use crate::domain::error::{DomainError, Result};
+use crate::domain::error::Result;
 use crate::domain::resource::{Ensure, FileResource, Resource, ResourceProvider, ResourceState};
 use async_trait::async_trait;
 use nix::unistd::{Group, User, chown};
@@ -61,14 +61,14 @@ impl FsAdapter {
         if dir.ensure == Ensure::Present {
             if !dir.path.exists() {
                 fs::create_dir_all(&dir.path).map_err(|e| {
-                    DomainError::Internal(format!("Failed to create directory: {}", e))
+                    anyhow::anyhow!("Failed to create directory: {}", e)
                 })?;
             }
             self.apply_metadata(&dir.path, &dir.owner, &dir.group, &dir.mode)
                 .await?;
         } else if dir.path.exists() {
             fs::remove_dir_all(&dir.path)
-                .map_err(|e| DomainError::Internal(format!("Failed to remove directory: {}", e)))?;
+                .map_err(|e| anyhow::anyhow!("Failed to remove directory: {}", e))?;
         }
         Ok(())
     }
@@ -83,23 +83,23 @@ impl FsAdapter {
         // Mode
         if let Some(mode_str) = mode {
             let mode_val = u32::from_str_radix(mode_str, 8).map_err(|e| {
-                DomainError::Internal(format!("Invalid mode octal string '{}': {}", mode_str, e))
+                anyhow::anyhow!("Invalid mode octal string '{}': {}", mode_str, e)
             })?;
             let mut perms = fs::metadata(path)
-                .map_err(|e| DomainError::Internal(format!("Failed to get metadata: {}", e)))?
+                .map_err(|e| anyhow::anyhow!("Failed to get metadata: {}", e))?
                 .permissions();
             perms.set_mode(mode_val);
             fs::set_permissions(path, perms)
-                .map_err(|e| DomainError::Internal(format!("Failed to set permissions: {}", e)))?;
+                .map_err(|e| anyhow::anyhow!("Failed to set permissions: {}", e))?;
         }
 
         // Owner / Group
         let uid = if let Some(owner_name) = owner {
             let user = User::from_name(owner_name)
                 .map_err(|e| {
-                    DomainError::Internal(format!("Failed to resolve user '{}': {}", owner_name, e))
+                    anyhow::anyhow!("Failed to resolve user '{}': {}", owner_name, e)
                 })?
-                .ok_or_else(|| DomainError::Internal(format!("User '{}' not found", owner_name)))?;
+                .ok_or_else(|| anyhow::anyhow!("User '{}' not found", owner_name))?;
             Some(user.uid)
         } else {
             None
@@ -108,13 +108,13 @@ impl FsAdapter {
         let gid = if let Some(group_name) = group {
             let grp = Group::from_name(group_name)
                 .map_err(|e| {
-                    DomainError::Internal(format!(
+                    anyhow::anyhow!(
                         "Failed to resolve group '{}': {}",
                         group_name, e
-                    ))
+                    )
                 })?
                 .ok_or_else(|| {
-                    DomainError::Internal(format!("Group '{}' not found", group_name))
+                    anyhow::anyhow!("Group '{}' not found", group_name)
                 })?;
             Some(grp.gid)
         } else {
@@ -123,7 +123,7 @@ impl FsAdapter {
 
         if uid.is_some() || gid.is_some() {
             chown(path, uid, gid)
-                .map_err(|e| DomainError::Internal(format!("Failed to chown: {}", e)))?;
+                .map_err(|e| anyhow::anyhow!("Failed to chown: {}", e))?;
         }
 
         Ok(())
@@ -140,7 +140,7 @@ impl FsAdapter {
 
         if let Some(expected_content) = &file.content {
             let actual_content = fs::read_to_string(&file.path)
-                .map_err(|e| DomainError::Internal(format!("Failed to read file: {}", e)))?;
+                .map_err(|e| anyhow::anyhow!("Failed to read file: {}", e))?;
 
             if &actual_content != expected_content {
                 return Ok(Ensure::Absent);
@@ -158,16 +158,16 @@ impl FsAdapter {
                     && !parent.exists()
                 {
                     fs::create_dir_all(parent).map_err(|e| {
-                        DomainError::Internal(format!("Failed to create parent directory: {}", e))
+                        anyhow::anyhow!("Failed to create parent directory: {}", e)
                     })?;
                 }
 
                 let mut f = fs::File::create(&file.path)
-                    .map_err(|e| DomainError::Internal(format!("Failed to create file: {}", e)))?;
+                    .map_err(|e| anyhow::anyhow!("Failed to create file: {}", e))?;
 
                 if let Some(content) = &file.content {
                     f.write_all(content.as_bytes()).map_err(|e| {
-                        DomainError::Internal(format!("Failed to write file: {}", e))
+                        anyhow::anyhow!("Failed to write file: {}", e)
                     })?;
                 }
 
@@ -180,7 +180,7 @@ impl FsAdapter {
             Ensure::Absent => {
                 if file.path.exists() {
                     fs::remove_file(&file.path).map_err(|e| {
-                        DomainError::Internal(format!("Failed to remove file: {}", e))
+                        anyhow::anyhow!("Failed to remove file: {}", e)
                     })?;
                     tracing::info!(path = %file.path.display(), "File ensured absent");
                 }

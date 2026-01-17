@@ -1,5 +1,5 @@
 use crate::domain::catalog::Catalog;
-use crate::domain::error::{DomainError, Result};
+use crate::domain::error::Result;
 use crate::domain::facts::Facts;
 use crate::domain::resource::Resource;
 use crate::infrastructure::stash::Stash;
@@ -331,7 +331,7 @@ impl PupoxideEngine {
         let ast = self
             .engine
             .compile_file(path)
-            .map_err(|e| DomainError::Internal(format!("Rhai compilation error: {}", e)))?;
+            .map_err(|e| anyhow::anyhow!("Rhai compilation error: {}", e))?;
 
         let eval_res = CURRENT_EXEC_CTX.with(|ctx| {
             *ctx.borrow_mut() = Some(exec_ctx.clone());
@@ -341,7 +341,7 @@ impl PupoxideEngine {
         });
 
         let _ =
-            eval_res.map_err(|e| DomainError::Internal(format!("Rhai execution error: {}", e)))?;
+            eval_res.map_err(|e| anyhow::anyhow!("Rhai execution error: {}", e))?;
 
         let resources = exec_ctx
             .resources
@@ -383,10 +383,10 @@ impl PupoxideEngine {
             sorted: &mut Vec<Resource>,
         ) -> Result<()> {
             if visiting.contains(id) {
-                return Err(DomainError::Internal(format!(
+                return Err(anyhow::anyhow!(
                     "Circular dependency detected involving: {}",
                     id
-                )));
+                ));
             }
             if !visited.contains(id) {
                 visiting.insert(id.to_string());

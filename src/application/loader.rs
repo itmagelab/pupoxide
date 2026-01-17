@@ -1,4 +1,4 @@
-use crate::domain::error::{DomainError, Result};
+use crate::domain::error::Result;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -23,10 +23,10 @@ impl EnvironmentLoader {
         if path.exists() {
             Ok(path)
         } else {
-            Err(DomainError::Internal(format!(
+            Err(anyhow::anyhow!(
                 "Site manifest not found at: {}",
                 path.display()
-            )))
+            ))
         }
     }
 
@@ -49,11 +49,11 @@ impl EnvironmentLoader {
         if path.exists() {
             Ok(path)
         } else {
-            Err(DomainError::Internal(format!(
+            Err(anyhow::anyhow!(
                 "Module '{}' not found at: {}",
                 module_name,
                 path.display()
-            )))
+            ))
         }
     }
 }

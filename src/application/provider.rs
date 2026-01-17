@@ -1,4 +1,4 @@
-use crate::domain::error::{DomainError, Result};
+use crate::domain::error::Result;
 use crate::domain::resource::{Resource, ResourceProvider, ResourceState};
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -29,10 +29,10 @@ impl ProviderRegistry {
             .iter()
             .find(|p| p.can_handle(resource))
             .ok_or_else(|| {
-                DomainError::Internal(format!(
+                anyhow::anyhow!(
                     "No provider found for resource: {}",
                     resource.id()
-                ))
+                )
             })
     }
 }
