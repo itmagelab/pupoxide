@@ -2,9 +2,8 @@ use crate::domain::error::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
-#[derive(Default)]
 pub enum Ensure {
     #[default]
     Present,
@@ -100,27 +99,15 @@ impl Resource {
     }
 
     pub fn add_dependency(&mut self, dep_id: String) {
-        match self {
-            Resource::File(f) => {
-                if !f.dependencies.contains(&dep_id) {
-                    f.dependencies.push(dep_id);
-                }
-            }
-            Resource::Directory(d) => {
-                if !d.dependencies.contains(&dep_id) {
-                    d.dependencies.push(dep_id);
-                }
-            }
-            Resource::Exec(e) => {
-                if !e.dependencies.contains(&dep_id) {
-                    e.dependencies.push(dep_id);
-                }
-            }
-            Resource::Meta(m) => {
-                if !m.dependencies.contains(&dep_id) {
-                    m.dependencies.push(dep_id);
-                }
-            }
+        let deps = match self {
+            Resource::File(f) => &mut f.dependencies,
+            Resource::Directory(d) => &mut d.dependencies,
+            Resource::Exec(e) => &mut e.dependencies,
+            Resource::Meta(m) => &mut m.dependencies,
+        };
+
+        if !deps.contains(&dep_id) {
+            deps.push(dep_id);
         }
     }
 }
