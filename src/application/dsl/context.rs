@@ -19,13 +19,13 @@ impl DslContext {
         exec_ctx: &ExecutionContext,
         resource: Resource,
     ) -> Result<Resource> {
-        // Enforce role constraints
+        // Enforce role constraints: Resources cannot be added directly in Roles
         {
-            let stack = exec_ctx
-                .inclusion_stack
+            let current_type = exec_ctx
+                .current_inclusion_type
                 .lock()
-                .map_err(|e| anyhow::anyhow!("Failed to lock inclusion stack: {}", e))?;
-            if stack.last() == Some(&crate::application::engine::InclusionType::Role)
+                .map_err(|e| anyhow::anyhow!("Failed to lock current inclusion type: {}", e))?;
+            if *current_type == Some(crate::application::engine::InclusionType::Role)
                 && !matches!(resource, Resource::Meta(_))
             {
                 return Err(anyhow::anyhow!("Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.", resource.id()));
@@ -72,7 +72,7 @@ impl DslContext {
     pub fn extract_dependencies(params: &Map, exec_ctx: &ExecutionContext) -> Vec<String> {
         let mut dependencies = Vec::new();
 
-        // Получаем информацию о текущем модуле и типе включения за одну блокировку
+        // Получаем текущий модуль и тип включения
         let current_info = {
             let stack = match exec_ctx.module_stack.lock() {
                 Ok(guard) => guard,
@@ -82,17 +82,16 @@ impl DslContext {
                 }
             };
                 
-            let inc_stack = match exec_ctx.inclusion_stack.lock() {
+            let current_type = match exec_ctx.current_inclusion_type.lock() {
                 Ok(guard) => guard,
                 Err(e) => {
-                    warn!("Failed to lock inclusion stack: {}", e);
+                    warn!("Failed to lock current inclusion type: {}", e);
                     return dependencies;
                 }
             };
 
             let current_module = stack.last().cloned();
-            // Default to Module if stack is misaligned (should not happen)
-            let inclusion_type = inc_stack.last().cloned().unwrap_or(crate::application::engine::InclusionType::Module);
+            let inclusion_type = current_type.clone().unwrap_or(crate::application::engine::InclusionType::Module);
 
             (current_module, inclusion_type)
         };

@@ -16,19 +16,19 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
               -> std::result::Result<ModuleHandle, Box<rhai::EvalAltResult>> {
             let exec_ctx = DslContext::get_exec_ctx();
 
-            // Check constraints
+            // Check constraints: Roles can only include Profiles
             {
-                let stack = match exec_ctx.inclusion_stack.lock() {
+                let current_type = match exec_ctx.current_inclusion_type.lock() {
                     Ok(guard) => guard,
                     Err(e) => {
-                        warn!("Failed to lock inclusion stack: {}", e);
+                        warn!("Failed to lock current inclusion type: {}", e);
                         return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                            format!("Failed to lock inclusion stack: {}", e).into(),
+                            format!("Failed to lock current inclusion type: {}", e).into(),
                             rhai::Position::NONE,
                         )));
                     }
                 };
-                if stack.last() == Some(&InclusionType::Role) && inc_type != InclusionType::Profile {
+                if *current_type == Some(InclusionType::Role) && inc_type != InclusionType::Profile {
                     return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
                         "Roles can ONLY include profiles. Technical modules or other roles are not allowed.".into(),
                         rhai::Position::NONE,
@@ -136,25 +136,10 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
                     let mut dependencies = Vec::new();
 
                     // Add dependency on parent module if exists
-                    let stack_result = exec_ctx.module_stack.lock();
-                    let inc_stack_result = exec_ctx.inclusion_stack.lock();
-                    
-                    if let (Ok(stack), Ok(inc_stack)) = (stack_result, inc_stack_result) {
+                    if let Ok(stack) = exec_ctx.module_stack.lock() {
                         if let Some(parent) = stack.last() {
-                             // Stack has parent name. Inclusion stack has parent type.
-                             // They are pushed in sync.
-                             // stack is [parent]
-                             // inc_stack is [parent_type]
-                             if let Some(parent_type) = inc_stack.last() {
-                                 dependencies.push(format!("{:?}Start[{}]", parent_type, parent));
-                             }
+                            dependencies.push(format!("ModuleStart[{}]", parent));
                         }
-                    } else {
-                        warn!("Failed to lock module or inclusion stack");
-                        return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                            "Failed to lock module or inclusion stack".into(),
-                            rhai::Position::NONE,
-                        )));
                     }
                     
                     resources.push(Resource::Meta(MetaResource {
@@ -175,17 +160,20 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
                     )));
                 }
 
-                // Track inclusion context
-                let inclusion_stack_result = exec_ctx.inclusion_stack.lock();
-                if let Ok(mut stack) = inclusion_stack_result {
-                    stack.push(inc_type);
-                } else {
-                    warn!("Failed to lock inclusion stack");
-                    return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                        "Failed to lock inclusion stack".into(),
-                        rhai::Position::NONE,
-                    )));
-                }
+                // Save old inclusion context and set new one
+                let old_inclusion_type = {
+                    let mut current = match exec_ctx.current_inclusion_type.lock() {
+                        Ok(guard) => guard,
+                        Err(e) => {
+                            warn!("Failed to lock current inclusion type: {}", e);
+                            return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
+                                "Failed to lock current inclusion type".into(),
+                                rhai::Position::NONE,
+                            )));
+                        }
+                    };
+                    std::mem::replace(&mut *current, Some(inc_type))
+                };
 
                 let old_path = std::mem::replace(&mut *current_p, full_path.clone());
                 drop(current_p);
@@ -205,15 +193,18 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
                 });
 
                 // Restore inclusion context
-                let inclusion_stack_result = exec_ctx.inclusion_stack.lock();
-                if let Ok(mut stack) = inclusion_stack_result {
-                    stack.pop();
-                } else {
-                    warn!("Failed to lock inclusion stack");
-                    return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                        "Failed to lock inclusion stack".into(),
-                        rhai::Position::NONE,
-                    )));
+                {
+                    let mut current = match exec_ctx.current_inclusion_type.lock() {
+                        Ok(guard) => guard,
+                        Err(e) => {
+                            warn!("Failed to lock current inclusion type: {}", e);
+                            return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
+                                "Failed to lock current inclusion type".into(),
+                                rhai::Position::NONE,
+                            )));
+                        }
+                    };
+                    *current = old_inclusion_type;
                 }
 
                 let current_path_result = exec_ctx.current_path.lock();

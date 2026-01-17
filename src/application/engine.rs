@@ -27,7 +27,7 @@ pub struct ExecutionContext {
     pub resources: Arc<Mutex<Vec<Resource>>>,
     pub included_modules: Arc<Mutex<HashSet<String>>>,
     pub module_stack: Arc<Mutex<Vec<String>>>,
-    pub inclusion_stack: Arc<Mutex<Vec<InclusionType>>>,
+    pub current_inclusion_type: Arc<Mutex<Option<InclusionType>>>,
     pub facts: Arc<Facts>,
     pub current_path: Arc<Mutex<PathBuf>>,
 }
@@ -38,7 +38,7 @@ impl ExecutionContext {
             resources: Arc::new(Mutex::new(Vec::new())),
             included_modules: Arc::new(Mutex::new(HashSet::new())),
             module_stack: Arc::new(Mutex::new(Vec::new())),
-            inclusion_stack: Arc::new(Mutex::new(Vec::new())),
+            current_inclusion_type: Arc::new(Mutex::new(None)),
             facts: Arc::new(facts),
             current_path: Arc::new(Mutex::new(path)),
         }
