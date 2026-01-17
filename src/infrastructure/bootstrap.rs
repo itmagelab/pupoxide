@@ -28,6 +28,7 @@ impl BootstrapRequestManager {
             csr,
             requested_at: Utc::now().timestamp(),
             status: "pending".to_string(),
+            certificate: None,
         };
 
         // Save request to file

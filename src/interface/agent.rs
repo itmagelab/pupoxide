@@ -46,10 +46,33 @@ impl PupoxideAgent {
             .context("Failed to create certificate directory")?;
 
         // 1. Generate CSR and private key
-        let (csr_req, private_key_pem) = AgentCertificateRequest::generate(&self.node_name)
+        let (csr_req, private_key_pem, self_signed_cert) = AgentCertificateRequest::generate(&self.node_name)
             .context("Failed to generate CSR")?;
 
         debug!(node_name = %self.node_name, "CSR generated");
+
+        // Save the self-signed cert and private key (these are guaranteed to match)
+        let key_path = self.cert_dir.join("agent.key");
+        let self_signed_path = self.cert_dir.join("agent-self-signed.pem");
+        
+        tokio::fs::write(&key_path, &private_key_pem)
+            .await
+            .context("Failed to write agent private key")?;
+        
+        tokio::fs::write(&self_signed_path, &self_signed_cert)
+            .await
+            .context("Failed to write agent self-signed certificate")?;
+
+        // Set restrictive permissions on private key
+        #[cfg(unix)]
+        {
+            use std::fs::Permissions;
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&key_path, Permissions::from_mode(0o600))
+                .context("Failed to set key permissions")?;
+        }
+
+        debug!(node_name = %self.node_name, "Self-signed cert and key saved");
 
         // 2. Send CSR to Master (no token required)
         let bootstrap_request = BootstrapRequest {
@@ -57,6 +80,7 @@ impl PupoxideAgent {
             csr: csr_req.csr_pem,
             requested_at: chrono::Utc::now().timestamp(),
             status: "pending".to_string(),
+            certificate: Some(self_signed_cert),
         };
 
         let client = reqwest::Client::new();
@@ -86,21 +110,6 @@ impl PupoxideAgent {
             .json()
             .await
             .context("Failed to parse bootstrap response")?;
-
-        // 3. Save private key locally (we'll get certificate after admin approval)
-        let key_path = self.cert_dir.join("agent.key");
-        tokio::fs::write(&key_path, &private_key_pem)
-            .await
-            .context("Failed to write agent private key")?;
-
-        // Set restrictive permissions on private key
-        #[cfg(unix)]
-        {
-            use std::fs::Permissions;
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&key_path, Permissions::from_mode(0o600))
-                .context("Failed to set key permissions")?;
-        }
 
         info!(
             node_name = %self.node_name,
@@ -269,20 +278,30 @@ impl PupoxideAgent {
         _ca_path: &Path,
         facts: crate::domain::facts::Facts,
     ) -> Result<Catalog> {
-        // Load certificates and private key
-        let cert_pem = tokio::fs::read(cert_path)
-            .await
-            .context("Failed to read agent certificate")?;
+        // For mTLS, we use the self-signed certificate that matches the private key
+        // The server-signed certificate is stored separately for audit/verification
+        let self_signed_cert_path = self.cert_dir.join("agent-self-signed.pem");
+        
+        // Load self-signed certificate and private key (these are guaranteed to match)
+        let cert_pem = match tokio::fs::read_to_string(&self_signed_cert_path).await {
+            Ok(content) => content,
+            Err(_) => {
+                // Fallback to agent.pem if self-signed doesn't exist
+                tokio::fs::read_to_string(cert_path)
+                    .await
+                    .context("Failed to read agent certificate")?
+            }
+        };
 
-        let key_pem = tokio::fs::read(key_path)
+        let key_pem = tokio::fs::read_to_string(key_path)
             .await
             .context("Failed to read agent private key")?;
 
         // Create client identity from cert and key
-        let identity = reqwest::Identity::from_pem(
-            &format!("{}{}", String::from_utf8(cert_pem)?, String::from_utf8(key_pem)?).into_bytes(),
-        )
-        .context("Failed to create client identity from certificate and key")?;
+        // Combine certificate and key with proper newline separation for PEM format
+        let combined_pem = format!("{}\n{}", cert_pem.trim_end(), key_pem.trim_end());
+        let identity = reqwest::Identity::from_pem(combined_pem.as_bytes())
+            .context("Failed to create client identity from certificate and key")?;
 
         // Create HTTP client with mTLS
         let client = reqwest::Client::builder()
@@ -326,9 +345,13 @@ impl PupoxideAgent {
     /// Acquire an exclusive lock for this agent
     /// Waits up to timeout_secs for the lock to become available
     pub async fn acquire_lock(&self, timeout_secs: u64) -> Result<AgentLock> {
-        let lock_file = self.cert_dir.parent()
-            .map(|p| p.join(format!("{}.lock", self.node_name)))
-            .ok_or_else(|| anyhow!("Invalid certificate directory path"))?;
+        // Create lock file in the agent's cert directory to ensure it exists
+        let lock_file = self.cert_dir.join(format!("{}.lock", self.node_name));
+
+        // Ensure the cert directory exists
+        tokio::fs::create_dir_all(&self.cert_dir)
+            .await
+            .context("Failed to create agent cert directory")?;
 
         let timeout = Duration::from_secs(timeout_secs);
         let start = std::time::Instant::now();

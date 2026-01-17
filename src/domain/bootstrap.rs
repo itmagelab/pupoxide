@@ -7,13 +7,15 @@ pub struct BootstrapRequest {
     /// Node ID requesting to bootstrap
     #[validate(length(min = 1, max = 255))]
     pub node_id: String,
-    /// PEM-encoded Certificate Signing Request
-    #[validate(length(min = 1))]
+    /// PEM-encoded Certificate Signing Request (for compatibility, can be empty)
     pub csr: String,
     /// Unix timestamp when request was created
     pub requested_at: i64,
     /// Status of the request: "pending", "approved", "rejected"
     pub status: String,
+    /// PEM-encoded self-signed certificate (contains the public key)
+    #[serde(default)]
+    pub certificate: Option<String>,
 }
 
 impl BootstrapRequest {
@@ -83,6 +85,7 @@ mod tests {
             csr: "test_csr".to_string(),
             requested_at: 1234567890,
             status: "pending".to_string(),
+            certificate: None,
         };
 
         assert!(req.is_pending());
