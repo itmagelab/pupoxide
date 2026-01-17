@@ -3,11 +3,11 @@ use crate::application::loader::EnvironmentLoader;
 use crate::domain::bootstrap::{BootstrapRequest, BootstrapResponse};
 use crate::domain::catalog::Catalog;
 use crate::domain::facts::Facts;
-use crate::infrastructure::{AgentRegistry, BootstrapTokenManager};
+use crate::infrastructure::{BootstrapRequestManager, AgentRegistryFs};
 use crate::infrastructure::certificate::CertificateAuthority;
 use axum::{
     extract::ConnectInfo,
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{IntoResponse, Response},
     Json, Router,
     extract::{Path, State},
@@ -21,15 +21,16 @@ pub struct MasterState {
     pub engine: PupoxideEngine,
     pub loader: EnvironmentLoader,
     pub ca: CertificateAuthority,
-    pub bootstrap_manager: BootstrapTokenManager,
-    pub agent_registry: AgentRegistry,
+    pub bootstrap_manager: BootstrapRequestManager,
+    pub agent_registry: AgentRegistryFs,
 }
 
 pub async fn start_master(state: MasterState, port: u16) -> anyhow::Result<()> {
     let shared_state = Arc::new(state);
 
     let app = Router::new()
-        .route("/bootstrap", post(bootstrap))
+        .route("/bootstrap", post(bootstrap_request))
+        .route("/bootstrap/check", post(check_bootstrap))
         .route("/catalog/{env}/{node}", post(get_catalog))
         .with_state(shared_state)
         .into_make_service_with_connect_info::<SocketAddr>();
@@ -42,65 +43,106 @@ pub async fn start_master(state: MasterState, port: u16) -> anyhow::Result<()> {
 }
 
 /// Bootstrap endpoint - Phase 1
-/// Agent sends CSR and bootstrap token
-async fn bootstrap(
+/// Agent sends CSR, request is stored for admin approval
+async fn bootstrap_request(
     State(state): State<Arc<MasterState>>,
-    headers: HeaderMap,
     Json(payload): Json<BootstrapRequest>,
 ) -> Result<Json<BootstrapResponse>, ServerError> {
-    // 1. Verify bootstrap token
-    let auth_header = headers
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok())
-        .ok_or(ServerError(StatusCode::UNAUTHORIZED, "Missing Authorization header".into()))?;
+    info!(node_id = %payload.node_id, "Received bootstrap request from agent");
 
-    // Extract token from "Bearer TOKEN" format
-    let token_str = auth_header
-        .strip_prefix("Bearer ")
-        .ok_or(ServerError(StatusCode::UNAUTHORIZED, "Invalid Authorization format".into()))?;
-
-    let verified_node_id = state
+    // Store the bootstrap request
+    let request = state
         .bootstrap_manager
-        .verify_token(token_str)
+        .create_request(&payload.node_id, payload.csr)
         .await
         .map_err(|e| {
-            error!(error = %e, "Token verification failed");
-            ServerError(StatusCode::FORBIDDEN, "Invalid or expired token".into())
+            error!(error = %e, "Failed to create bootstrap request");
+            ServerError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to process bootstrap request".into(),
+            )
         })?;
-
-    // Ensure CSR is for the correct node_id
-    if payload.node_id != verified_node_id {
-        return Err(ServerError(
-            StatusCode::BAD_REQUEST,
-            format!("node_id in CSR ({}) doesn't match token ({})", payload.node_id, verified_node_id),
-        ));
-    }
-
-    // 2. Sign CSR with Master CA
-    let signed_cert = state
-        .ca
-        .sign_csr(&payload.node_id, 365)
-        .map_err(|e| {
-            error!(error = %e, "Certificate signing failed");
-            ServerError(StatusCode::INTERNAL_SERVER_ERROR, "Failed to sign certificate".into())
-        })?;
-
-    // 3. Register agent
-    state
-        .agent_registry
-        .register(&payload.node_id, &payload.node_id, signed_cert.clone())
-        .await
-        .map_err(|e| {
-            error!(error = %e, "Agent registration failed");
-            ServerError(StatusCode::INTERNAL_SERVER_ERROR, "Failed to register agent".into())
-        })?;
-
-    info!(node_id = %payload.node_id, "Agent successfully registered");
 
     Ok(Json(BootstrapResponse {
-        certificate: signed_cert,
-        ca_certificate: state.ca.cert_pem().to_string(),
+        status: request.status,
+        message: "Request received. Awaiting admin approval.".to_string(),
+        certificate: None,
+        ca_certificate: None,
     }))
+}
+
+/// Check bootstrap status endpoint
+/// Agent checks if their request was approved and fetches certificate
+async fn check_bootstrap(
+    State(state): State<Arc<MasterState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<BootstrapResponse>, ServerError> {
+    let node_id = payload
+        .get("node_id")
+        .and_then(|v| v.as_str())
+        .ok_or(ServerError(
+            StatusCode::BAD_REQUEST,
+            "Missing node_id".into(),
+        ))?;
+
+    debug!(node_id = node_id, "Checking bootstrap status");
+
+    // Get the request
+    let request = state
+        .bootstrap_manager
+        .get_request(node_id)
+        .await
+        .map_err(|_| {
+            ServerError(StatusCode::NOT_FOUND, format!("No request found for {}", node_id))
+        })?;
+
+    match request.status.as_str() {
+        "pending" => Ok(Json(BootstrapResponse {
+            status: "pending".to_string(),
+            message: "Request still pending admin approval.".to_string(),
+            certificate: None,
+            ca_certificate: None,
+        })),
+        "approved" => {
+            // Sign certificate
+            let signed_cert = state
+                .ca
+                .sign_csr(node_id, 365)
+                .map_err(|e| {
+                    error!(error = %e, "Certificate signing failed");
+                    ServerError(StatusCode::INTERNAL_SERVER_ERROR, "Failed to sign certificate".into())
+                })?;
+
+            // Register agent
+            state
+                .agent_registry
+                .register(node_id, node_id, signed_cert.clone())
+                .await
+                .map_err(|e| {
+                    error!(error = %e, "Agent registration failed");
+                    ServerError(StatusCode::INTERNAL_SERVER_ERROR, "Failed to register agent".into())
+                })?;
+
+            info!(node_id = node_id, "Agent approved and certificate signed");
+
+            Ok(Json(BootstrapResponse {
+                status: "approved".to_string(),
+                message: "Certificate approved and ready.".to_string(),
+                certificate: Some(signed_cert),
+                ca_certificate: Some(state.ca.cert_pem().to_string()),
+            }))
+        }
+        "rejected" => Ok(Json(BootstrapResponse {
+            status: "rejected".to_string(),
+            message: "Request was rejected by admin.".to_string(),
+            certificate: None,
+            ca_certificate: None,
+        })),
+        _ => Err(ServerError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Unknown request status".into(),
+        )),
+    }
 }
 
 /// Get catalog endpoint - Phase 2 (mTLS)
@@ -110,8 +152,6 @@ async fn get_catalog(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(facts): Json<Facts>,
 ) -> Result<Json<Catalog>, ServerError> {
-    // TODO: Verify mTLS certificate CN matches node parameter
-    // For now, this is a placeholder for future mTLS verification
     debug!(node = %node, addr = %addr, "Catalog request received");
 
     // Verify agent is registered

@@ -4,6 +4,7 @@ use crate::infrastructure::facter::Facter;
 use crate::infrastructure::certificate::AgentCertificateRequest;
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tracing::{debug, info};
 
 pub struct PupoxideAgent {
@@ -32,11 +33,11 @@ impl PupoxideAgent {
         }
     }
 
-    /// Phase 1: Bootstrap - Register agent with master using bootstrap token
-    pub async fn bootstrap(&self, bootstrap_token: String) -> Result<()> {
+    /// Phase 1: Bootstrap - Submit CSR request to master (no token needed)
+    pub async fn bootstrap(&self) -> Result<()> {
         info!(
             node_name = %self.node_name,
-            "Starting bootstrap process"
+            "Starting bootstrap process - submitting CSR request"
         );
 
         // Create cert directory if not exists
@@ -50,10 +51,12 @@ impl PupoxideAgent {
 
         debug!(node_name = %self.node_name, "CSR generated");
 
-        // 2. Send CSR to Master with bootstrap token
+        // 2. Send CSR to Master (no token required)
         let bootstrap_request = BootstrapRequest {
             node_id: self.node_name.clone(),
             csr: csr_req.csr_pem,
+            requested_at: chrono::Utc::now().timestamp(),
+            status: "pending".to_string(),
         };
 
         let client = reqwest::Client::new();
@@ -61,7 +64,6 @@ impl PupoxideAgent {
 
         let response = client
             .post(&bootstrap_url)
-            .header("Authorization", format!("Bearer {}", bootstrap_token))
             .json(&bootstrap_request)
             .send()
             .await
@@ -74,7 +76,7 @@ impl PupoxideAgent {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(anyhow!(
-                "Bootstrap failed with status {}: {}",
+                "Bootstrap request failed with status {}: {}",
                 status,
                 error_text
             ));
@@ -85,22 +87,11 @@ impl PupoxideAgent {
             .await
             .context("Failed to parse bootstrap response")?;
 
-        // 3. Save signed certificate and private key
-        let cert_path = self.cert_dir.join("agent.pem");
+        // 3. Save private key locally (we'll get certificate after admin approval)
         let key_path = self.cert_dir.join("agent.key");
-        let ca_path = self.cert_dir.join("ca.pem");
-
-        tokio::fs::write(&cert_path, &bootstrap_response.certificate)
-            .await
-            .context("Failed to write agent certificate")?;
-
         tokio::fs::write(&key_path, &private_key_pem)
             .await
             .context("Failed to write agent private key")?;
-
-        tokio::fs::write(&ca_path, &bootstrap_response.ca_certificate)
-            .await
-            .context("Failed to write CA certificate")?;
 
         // Set restrictive permissions on private key
         #[cfg(unix)]
@@ -113,11 +104,96 @@ impl PupoxideAgent {
 
         info!(
             node_name = %self.node_name,
-            cert_path = ?cert_path,
-            "Agent successfully registered. Certificate saved."
+            "Bootstrap request submitted. Status: {}. Message: {}",
+            bootstrap_response.status,
+            bootstrap_response.message
         );
 
+        println!("\n✓ Bootstrap request submitted!");
+        println!("  Node ID: {}", self.node_name);
+        println!("  Status: {}", bootstrap_response.status);
+        println!("  Message: {}", bootstrap_response.message);
+        println!("\n→ Admin must approve request before agent can run.");
+        println!("  Check status with: pupoxide agent --server {} --node {} --environment {} --bootstrap --check",
+                 self.server_url, self.node_name, self.environment);
+
         Ok(())
+    }
+
+    /// Check bootstrap status - polls until approved
+    pub async fn check_bootstrap_status(&self, timeout_secs: u64) -> Result<()> {
+        info!(
+            node_name = %self.node_name,
+            "Checking bootstrap approval status"
+        );
+
+        let client = reqwest::Client::new();
+        let check_url = format!("{}/bootstrap/check", self.server_url);
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(timeout_secs);
+
+        loop {
+            let response = client
+                .post(&check_url)
+                .json(&serde_json::json!({ "node_id": self.node_name }))
+                .send()
+                .await
+                .context("Failed to check bootstrap status")?;
+
+            let bootstrap_response: BootstrapResponse = response
+                .json()
+                .await
+                .context("Failed to parse bootstrap check response")?;
+
+            match bootstrap_response.status.as_str() {
+                "pending" => {
+                    if start.elapsed() > timeout {
+                        return Err(anyhow!("Bootstrap approval timeout ({}s)", timeout_secs));
+                    }
+                    info!("Still pending approval... waiting 5 seconds");
+                    println!("⏳ Request still pending... waiting");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+                "approved" => {
+                    // Save certificate
+                    let cert_pem = bootstrap_response.certificate
+                        .ok_or_else(|| anyhow!("No certificate in approval response"))?;
+                    let ca_pem = bootstrap_response.ca_certificate
+                        .ok_or_else(|| anyhow!("No CA certificate in approval response"))?;
+
+                    let cert_path = self.cert_dir.join("agent.pem");
+                    let ca_path = self.cert_dir.join("ca.pem");
+
+                    tokio::fs::write(&cert_path, &cert_pem)
+                        .await
+                        .context("Failed to write agent certificate")?;
+
+                    tokio::fs::write(&ca_path, &ca_pem)
+                        .await
+                        .context("Failed to write CA certificate")?;
+
+                    info!(
+                        node_name = %self.node_name,
+                        cert_path = ?cert_path,
+                        "Bootstrap approved! Certificate saved."
+                    );
+
+                    println!("\n✓ Bootstrap approved!");
+                    println!("  Certificate saved to: {:?}", cert_path);
+                    println!("\n→ You can now run the agent:");
+                    println!("  pupoxide agent --server {} --node {} --environment {}", 
+                             self.server_url, self.node_name, self.environment);
+
+                    return Ok(());
+                }
+                "rejected" => {
+                    return Err(anyhow!("Bootstrap request was rejected by admin"));
+                }
+                _ => {
+                    return Err(anyhow!("Unknown bootstrap status: {}", bootstrap_response.status));
+                }
+            }
+        }
     }
 
     /// Phase 2: Regular operation - Fetch catalog using mTLS
@@ -135,10 +211,11 @@ impl PupoxideAgent {
 
         if !cert_path.exists() || !key_path.exists() {
             return Err(anyhow!(
-                "Agent certificates not found. Run bootstrap first: \
-                 pupoxide agent bootstrap --server {} --node {} --token <token>",
+                "Agent certificates not found. Run bootstrap first and wait for approval: \
+                 pupoxide agent --server {} --node {} --environment {} --bootstrap --check",
                 self.server_url,
-                self.node_name
+                self.node_name,
+                self.environment
             ));
         }
 
@@ -186,7 +263,7 @@ impl PupoxideAgent {
         &self,
         cert_path: &Path,
         key_path: &Path,
-        ca_path: &Path,
+        _ca_path: &Path,
         facts: crate::domain::facts::Facts,
     ) -> Result<Catalog> {
         // Load certificates and private key
@@ -197,10 +274,6 @@ impl PupoxideAgent {
         let key_pem = tokio::fs::read(key_path)
             .await
             .context("Failed to read agent private key")?;
-
-        let _ca_pem = tokio::fs::read(ca_path)
-            .await
-            .context("Failed to read CA certificate")?;
 
         // Create client identity from cert and key
         let identity = reqwest::Identity::from_pem(

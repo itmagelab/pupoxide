@@ -26,6 +26,16 @@ cargo build --release
 
 ## Quick Start
 
+### Run Examples Tests
+
+The fastest way to test Pupoxide's complete bootstrap and certificate workflow:
+
+```bash
+bash examples/test_bootstrap.sh
+```
+
+This runs an automated 8-step test that demonstrates the three-phase bootstrap process. See [examples/README.md](examples/README.md) for detailed manual testing instructions.
+
 ### Dry-Run Mode (Preview)
 
 You can preview changes without applying them by using the `--dry-run` flag with `run`, `apply`, or `agent` commands:
@@ -58,65 +68,116 @@ cargo run -- --config ./examples apply --environment production
 
 Pupoxide can operate in a Master/Agent architecture with secure mutual TLS (mTLS) authentication.
 
-#### Two-Phase Security Model
+#### Three-Phase Bootstrap Process
 
-Pupoxide implements a secure two-phase bootstrap process:
+Pupoxide implements a secure three-phase bootstrap process:
 
-**Phase 1: Bootstrap** (without mTLS)
+**Phase 1: Request** (Agent submits CSR)
 - Agent generates a private key and Certificate Signing Request (CSR)
-- Agent sends CSR to Master with a one-time bootstrap token
-- Master verifies the token and signs the certificate
-- Agent saves the signed certificate locally
+- Agent sends CSR to Master (no token needed)
+- Master stores the request as "pending" in `/etc/pupoxide/bootstrap_requests/`
+- Agent saves the private key locally
 
-**Phase 2: Regular Operation** (with mTLS)
-- Agent uses the signed certificate for all communication
-- Master verifies the certificate during TLS handshake
-- All communication is encrypted and mutually authenticated
+**Phase 2: Approval** (Admin reviews and approves)
+- Admin views pending requests on Master
+- Admin approves/rejects requests using Master command
+- Master updates request status to "approved" or "rejected"
+- Request stored with status in filesystem
+
+**Phase 3: Activation** (Agent retrieves signed certificate)
+- Agent polls Master to check if request was approved
+- Upon approval, Master signs the certificate and stores agent metadata
+- Agent downloads and saves signed certificate
+- Agent can now connect using mTLS
 
 #### Usage
 
 **Start the Master Server:**
 
 ```bash
-cargo run -- --config ./examples master --port 8080
+cargo run -- master start --port 8080
 ```
 
 The Master will automatically:
-- Generate a CA certificate at `/etc/pupoxide/ca.pem`
-- Store the CA private key at `/etc/pupoxide/ca.key`
-- Accept agent bootstrap requests with valid tokens
+- Generate a CA certificate in the config directory
+- Create `/bootstrap_requests/` for pending CSRs
+- Create `/agents/` for registered agent certificates
 
-**Bootstrap an Agent** (Phase 1 - one time only):
+**Step 1: Submit Bootstrap Request** (on Agent machine):
 
 ```bash
-# Generate a bootstrap token on the master (via admin command)
-# This would be: pupoxide bootstrap-token --node-id agent-01 --ttl 3600
-# For now, you need to generate it manually
-
-BOOTSTRAP_TOKEN="your-generated-token-here"
-
-cargo run -- --config ./examples agent \
+# Agent submits CSR request (no token needed)
+cargo run -- agent \
   --server http://localhost:8080 \
-  --node my-node \
+  --node agent-01 \
   --environment production \
-  --bootstrap \
-  --token "$BOOTSTRAP_TOKEN"
+  --bootstrap
 ```
 
-This will:
-1. Generate a private key locally (never sent to server)
-2. Create a CSR and send it to the Master with the bootstrap token
-3. Receive a signed certificate from the Master
-4. Save certificate and key to `/etc/pupoxide/agents/my-node/`
+Output:
+```
+✓ Bootstrap request submitted!
+  Node ID: agent-01
+  Status: pending
+  Message: Request received. Awaiting admin approval.
 
-**Run the Agent** (Phase 2 - regular operation):
+→ Admin must approve request before agent can run.
+```
 
-Once bootstrap is complete, run the agent with the signed certificate:
+**Step 2: Admin Reviews and Approves** (on Master machine):
 
 ```bash
+# List all pending requests
+cargo run -- master list
+
+# Approve a request
+cargo run -- master sign --node agent-01
+
+# Or reject it
+cargo run -- master reject --node agent-01
+```
+
+Output:
+```
+✓ Node 'agent-01' has been approved and registered
+```
+
+**Step 3: Agent Checks Status and Gets Certificate** (on Agent machine):
+
+```bash
+# Poll until approved (checks every 5 seconds, default timeout 10 minutes)
+cargo run -- agent \
+  --server http://localhost:8080 \
+  --node agent-01 \
+  --environment production \
+  --bootstrap --check
+
+# Or with custom timeout
+cargo run -- agent \
+  --server http://localhost:8080 \
+  --node agent-01 \
+  --environment production \
+  --bootstrap --check --check-timeout 300
+```
+
+Output when approved:
+```
+✓ Bootstrap approved!
+  Certificate saved to: "/etc/pupoxide/agents/agent-01/agent.pem"
+
+→ You can now run the agent:
+  pupoxide agent --server http://localhost:8080 --node agent-01 --environment production
+```
+
+**Step 4: Run the Agent** (Phase 3 - regular operation with mTLS):
+
+Once bootstrap is complete and approved, run the agent normally:
+
+```bash
+# Agent connects using mTLS with signed certificate
 cargo run -- --config ./examples agent \
   --server https://localhost:8080 \
-  --node my-node \
+  --node agent-01 \
   --environment production
 ```
 
@@ -126,43 +187,33 @@ The agent will:
 3. Request the catalog for the node
 4. Apply the configuration
 
+#### File Structure
+
+```
+/etc/pupoxide/
+├── ca.pem                           # CA public certificate
+├── ca.key                           # CA private key
+├── bootstrap_requests/
+│   ├── agent-01.json               # Pending CSR (status: pending)
+│   ├── agent-02.json               # Approved CSR (status: approved)
+│   └── agent-03.json               # Rejected CSR (status: rejected)
+└── agents/
+    ├── agent-01.pem                # Signed certificate
+    ├── agent-01.json               # Metadata (registration time, etc)
+    ├── agent-02.pem
+    └── agent-02.json
+```
+
 #### Security Features
 
+✅ **No Pre-shared Secrets**: No bootstrap tokens needed  
+✅ **Manual Approval**: Admin must explicitly approve each agent  
 ✅ **Mutual TLS (mTLS)**: Both agent and master verify each other  
-✅ **One-time Bootstrap Token**: Single-use token prevents replay attacks  
 ✅ **Dynamic Certificates**: Each agent gets a unique signed certificate  
 ✅ **Private Key Protection**: Private keys never leave the agent (0600 permissions)  
-✅ **Encrypted Communication**: All post-bootstrap communication is encrypted
-
-#### Complete Workflow Example
-
-```bash
-# Terminal 1: Start the Master server
-cargo run -- --config ./examples master --port 8080
-
-# Terminal 2: Bootstrap the agent (one time, Phase 1)
-# Generate a token (admin would do this)
-BOOTSTRAP_TOKEN=$(uuidgen)  # or use: $(date +%s | sha256sum | head -c 32)
-
-# Run bootstrap command
-cargo run -- --config ./examples agent \
-  --server http://localhost:8080 \
-  --node agent-01 \
-  --environment production \
-  --bootstrap \
-  --token "$BOOTSTRAP_TOKEN"
-
-# Certificate saved to: /etc/pupoxide/agents/agent-01/
-
-# Terminal 2: Run the agent normally (Phase 2, repeated)
-# After bootstrap is complete, run the agent as usual
-cargo run -- --config ./examples agent \
-  --server https://localhost:8080 \
-  --node agent-01 \
-  --environment production
-
-# The agent will now use mTLS for secure communication
-```
+✅ **Encrypted Communication**: All post-bootstrap communication is encrypted  
+✅ **Audit Trail**: All requests stored in filesystem for review  
+✅ **Reject Capability**: Admin can reject malicious requests
 
 ## Example Manifest (`site.rhai`)
 

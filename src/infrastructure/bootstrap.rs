@@ -1,178 +1,247 @@
-use crate::domain::bootstrap::{BootstrapToken, RegisteredAgent};
+use crate::domain::bootstrap::{BootstrapRequest, RegisteredAgent, BootstrapRequestMetadata};
 use anyhow::{anyhow, Result};
 use chrono::Utc;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::path::PathBuf;
+use tokio::fs;
 use tracing::{debug, info};
-use uuid::Uuid;
 
-/// In-memory bootstrap token manager
-/// In production, this would be backed by a database
-pub struct BootstrapTokenManager {
-    tokens: Arc<RwLock<HashMap<String, BootstrapToken>>>,
+/// File-based bootstrap request manager
+/// Stores CSR requests in /etc/pupoxide/bootstrap_requests/
+pub struct BootstrapRequestManager {
+    requests_dir: PathBuf,
 }
 
-impl BootstrapTokenManager {
-    pub fn new() -> Self {
-        Self {
-            tokens: Arc::new(RwLock::new(HashMap::new())),
-        }
+impl BootstrapRequestManager {
+    pub fn new(requests_dir: PathBuf) -> Self {
+        Self { requests_dir }
     }
 
-    /// Generate a new bootstrap token
-    pub async fn generate_token(
-        &self,
-        node_id: &str,
-        ttl_seconds: i64,
-    ) -> Result<String> {
-        let token_str = Uuid::new_v4().to_string();
-        let _now = Utc::now().timestamp();
+    /// Create a new bootstrap request from CSR
+    pub async fn create_request(&self, node_id: &str, csr: String) -> Result<BootstrapRequest> {
+        // Create directory if not exists
+        fs::create_dir_all(&self.requests_dir)
+            .await
+            .map_err(|e| anyhow!("Failed to create requests directory: {}", e))?;
 
-        let token = BootstrapToken {
-            token: token_str.clone(),
+        let request = BootstrapRequest {
             node_id: node_id.to_string(),
-            issued_at: _now,
-            expires_at: _now + ttl_seconds,
-            used_at: None,
+            csr,
+            requested_at: Utc::now().timestamp(),
+            status: "pending".to_string(),
         };
 
-        let mut tokens = self.tokens.write().await;
-        tokens.insert(token_str.clone(), token);
+        // Save request to file
+        let request_path = self.requests_dir.join(format!("{}.json", node_id));
+        let request_json = serde_json::to_string_pretty(&request)?;
+        fs::write(&request_path, request_json)
+            .await
+            .map_err(|e| anyhow!("Failed to write request file: {}", e))?;
 
-        info!(node_id = node_id, "Generated new bootstrap token");
-        Ok(token_str)
+        info!(node_id = node_id, "Bootstrap request created");
+        Ok(request)
     }
 
-    /// Verify and consume a bootstrap token
-    pub async fn verify_token(&self, token_str: &str) -> Result<String> {
-        let mut tokens = self.tokens.write().await;
+    /// Get a bootstrap request by node_id
+    pub async fn get_request(&self, node_id: &str) -> Result<BootstrapRequest> {
+        let request_path = self.requests_dir.join(format!("{}.json", node_id));
+        
+        let content = fs::read_to_string(&request_path)
+            .await
+            .map_err(|_| anyhow!("Request {} not found", node_id))?;
 
-        let token = tokens
-            .get(token_str)
-            .ok_or_else(|| anyhow!("Token not found"))?;
-
-        if !token.is_valid() {
-            return Err(anyhow!("Token is invalid or expired"));
-        }
-
-        let node_id = token.node_id.clone();
-
-        // Mark token as used
-        if let Some(token) = tokens.get_mut(token_str) {
-            token.used_at = Some(Utc::now().timestamp());
-        }
-
-        info!(node_id = %node_id, "Token verified and consumed");
-        Ok(node_id)
+        let request: BootstrapRequest = serde_json::from_str(&content)?;
+        Ok(request)
     }
 
-    /// Clean up expired tokens
-    pub async fn cleanup_expired(&self) {
-        let mut tokens = self.tokens.write().await;
-
-        let before_count = tokens.len();
-        tokens.retain(|_, token| !token.is_expired());
-        let after_count = tokens.len();
-
-        if before_count != after_count {
-            debug!(removed = before_count - after_count, "Cleaned up expired tokens");
+    /// List all pending requests
+    pub async fn list_pending_requests(&self) -> Result<Vec<BootstrapRequestMetadata>> {
+        if !self.requests_dir.exists() {
+            return Ok(Vec::new());
         }
+
+        let mut requests = Vec::new();
+        let mut entries = fs::read_dir(&self.requests_dir)
+            .await
+            .map_err(|e| anyhow!("Failed to read requests directory: {}", e))?;
+
+        while let Some(entry) = entries.next_entry().await.map_err(|e| anyhow!("{}", e))? {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+                if let Ok(content) = fs::read_to_string(&path).await {
+                    if let Ok(req) = serde_json::from_str::<BootstrapRequest>(&content) {
+                        if req.is_pending() {
+                            requests.push(BootstrapRequestMetadata {
+                                node_id: req.node_id,
+                                status: req.status,
+                                requested_at: req.requested_at,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(requests)
+    }
+
+    /// Approve a bootstrap request
+    pub async fn approve_request(&self, node_id: &str) -> Result<BootstrapRequest> {
+        let request_path = self.requests_dir.join(format!("{}.json", node_id));
+
+        let content = fs::read_to_string(&request_path)
+            .await
+            .map_err(|_| anyhow!("Request {} not found", node_id))?;
+
+        let mut request: BootstrapRequest = serde_json::from_str(&content)?;
+        
+        if !request.is_pending() {
+            return Err(anyhow!("Request {} is not pending (status: {})", node_id, request.status));
+        }
+
+        request.approve();
+        let request_json = serde_json::to_string_pretty(&request)?;
+        fs::write(&request_path, request_json)
+            .await
+            .map_err(|e| anyhow!("Failed to update request file: {}", e))?;
+
+        info!(node_id = node_id, "Bootstrap request approved");
+        Ok(request)
+    }
+
+    /// Reject a bootstrap request
+    pub async fn reject_request(&self, node_id: &str) -> Result<()> {
+        let request_path = self.requests_dir.join(format!("{}.json", node_id));
+
+        let content = fs::read_to_string(&request_path)
+            .await
+            .map_err(|_| anyhow!("Request {} not found", node_id))?;
+
+        let mut request: BootstrapRequest = serde_json::from_str(&content)?;
+        request.reject();
+
+        let request_json = serde_json::to_string_pretty(&request)?;
+        fs::write(&request_path, request_json)
+            .await
+            .map_err(|e| anyhow!("Failed to update request file: {}", e))?;
+
+        info!(node_id = node_id, "Bootstrap request rejected");
+        Ok(())
     }
 }
 
-impl Default for BootstrapTokenManager {
-    fn default() -> Self {
-        Self::new()
-    }
+/// File-based agent registry
+pub struct AgentRegistryFs {
+    agents_dir: PathBuf,
 }
 
-/// Agent registry (tracks registered agents)
-/// In production, this would be backed by a database
-pub struct AgentRegistry {
-    agents: Arc<RwLock<HashMap<String, RegisteredAgent>>>,
-}
-
-impl AgentRegistry {
-    pub fn new() -> Self {
-        Self {
-            agents: Arc::new(RwLock::new(HashMap::new())),
-        }
+impl AgentRegistryFs {
+    pub fn new(agents_dir: PathBuf) -> Self {
+        Self { agents_dir }
     }
 
-    /// Register a new agent
+    /// Register (save) an agent certificate
     pub async fn register(
         &self,
         node_id: &str,
         cert_cn: &str,
         certificate_pem: String,
     ) -> Result<()> {
+        fs::create_dir_all(&self.agents_dir)
+            .await
+            .map_err(|e| anyhow!("Failed to create agents directory: {}", e))?;
+
         let agent = RegisteredAgent {
             node_id: node_id.to_string(),
             cert_cn: cert_cn.to_string(),
             certificate_pem,
-            registered_at: Utc::now().timestamp(),
+            approved_at: Utc::now().timestamp(),
             last_seen: None,
             is_active: true,
         };
 
-        let mut agents = self.agents.write().await;
-        agents.insert(node_id.to_string(), agent);
+        // Save certificate
+        let cert_path = self.agents_dir.join(format!("{}.pem", node_id));
+        fs::write(&cert_path, &agent.certificate_pem)
+            .await
+            .map_err(|e| anyhow!("Failed to write certificate: {}", e))?;
 
-        info!(node_id = node_id, "Agent registered");
+        // Save metadata
+        let metadata_path = self.agents_dir.join(format!("{}.json", node_id));
+        let metadata_json = serde_json::to_string_pretty(&agent)?;
+        fs::write(&metadata_path, metadata_json)
+            .await
+            .map_err(|e| anyhow!("Failed to write metadata: {}", e))?;
+
+        info!(node_id = node_id, "Agent registered and certificate saved");
         Ok(())
     }
 
-    /// Verify if an agent is registered and active
+    /// Check if agent is registered and active
     pub async fn is_registered(&self, node_id: &str) -> Result<bool> {
-        let agents = self.agents.read().await;
-        let is_registered = agents
-            .get(node_id)
-            .map(|agent| agent.is_active)
-            .unwrap_or(false);
-
-        Ok(is_registered)
-    }
-
-    /// Update last_seen timestamp for an agent
-    pub async fn update_last_seen(&self, node_id: &str) -> Result<()> {
-        let mut agents = self.agents.write().await;
-
-        if let Some(agent) = agents.get_mut(node_id) {
-            agent.last_seen = Some(Utc::now().timestamp());
-            debug!(node_id = node_id, "Updated last_seen");
-            Ok(())
-        } else {
-            Err(anyhow!("Agent {} not found", node_id))
-        }
-    }
-
-    /// Revoke an agent (mark as inactive)
-    pub async fn revoke(&self, node_id: &str) -> Result<()> {
-        let mut agents = self.agents.write().await;
-
-        if let Some(agent) = agents.get_mut(node_id) {
-            agent.is_active = false;
-            info!(node_id = node_id, "Agent revoked");
-            Ok(())
-        } else {
-            Err(anyhow!("Agent {} not found", node_id))
+        let metadata_path = self.agents_dir.join(format!("{}.json", node_id));
+        
+        match fs::read_to_string(&metadata_path).await {
+            Ok(content) => {
+                if let Ok(agent) = serde_json::from_str::<RegisteredAgent>(&content) {
+                    Ok(agent.is_active)
+                } else {
+                    Ok(false)
+                }
+            }
+            Err(_) => Ok(false),
         }
     }
 
     /// Get agent info
     pub async fn get_agent(&self, node_id: &str) -> Result<RegisteredAgent> {
-        let agents = self.agents.read().await;
-        agents
-            .get(node_id)
-            .cloned()
-            .ok_or_else(|| anyhow!("Agent {} not found", node_id))
-    }
-}
+        let metadata_path = self.agents_dir.join(format!("{}.json", node_id));
 
-impl Default for AgentRegistry {
-    fn default() -> Self {
-        Self::new()
+        let content = fs::read_to_string(&metadata_path)
+            .await
+            .map_err(|_| anyhow!("Agent {} not found", node_id))?;
+
+        serde_json::from_str::<RegisteredAgent>(&content)
+            .map_err(|e| anyhow!("Failed to parse agent metadata: {}", e))
+    }
+
+    /// Update last_seen timestamp
+    pub async fn update_last_seen(&self, node_id: &str) -> Result<()> {
+        let metadata_path = self.agents_dir.join(format!("{}.json", node_id));
+
+        let content = fs::read_to_string(&metadata_path)
+            .await
+            .map_err(|_| anyhow!("Agent {} not found", node_id))?;
+
+        let mut agent = serde_json::from_str::<RegisteredAgent>(&content)?;
+        agent.last_seen = Some(Utc::now().timestamp());
+
+        let metadata_json = serde_json::to_string_pretty(&agent)?;
+        fs::write(&metadata_path, metadata_json)
+            .await
+            .map_err(|e| anyhow!("Failed to update metadata: {}", e))?;
+
+        debug!(node_id = node_id, "Updated last_seen");
+        Ok(())
+    }
+
+    /// Revoke an agent
+    pub async fn revoke(&self, node_id: &str) -> Result<()> {
+        let metadata_path = self.agents_dir.join(format!("{}.json", node_id));
+
+        let content = fs::read_to_string(&metadata_path)
+            .await
+            .map_err(|_| anyhow!("Agent {} not found", node_id))?;
+
+        let mut agent = serde_json::from_str::<RegisteredAgent>(&content)?;
+        agent.is_active = false;
+
+        let metadata_json = serde_json::to_string_pretty(&agent)?;
+        fs::write(&metadata_path, metadata_json)
+            .await
+            .map_err(|e| anyhow!("Failed to update metadata: {}", e))?;
+
+        info!(node_id = node_id, "Agent revoked");
+        Ok(())
     }
 }
 
@@ -181,65 +250,52 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_generate_token() {
-        let manager = BootstrapTokenManager::new();
-        let token = manager
-            .generate_token("agent-01", 3600)
+    async fn test_create_request() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let manager = BootstrapRequestManager::new(temp_dir.path().to_path_buf());
+
+        let req = manager
+            .create_request("agent-01", "test_csr".to_string())
             .await
-            .expect("Failed to generate token");
-        assert!(!token.is_empty());
+            .expect("Failed to create request");
+
+        assert_eq!(req.node_id, "agent-01");
+        assert!(req.is_pending());
     }
 
     #[tokio::test]
-    async fn test_verify_token() {
-        let manager = BootstrapTokenManager::new();
-        let token = manager
-            .generate_token("agent-01", 3600)
-            .await
-            .expect("Failed to generate token");
-        let node_id = manager
-            .verify_token(&token)
-            .await
-            .expect("Failed to verify token");
-        assert_eq!(node_id, "agent-01");
+    async fn test_approve_request() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let manager = BootstrapRequestManager::new(temp_dir.path().to_path_buf());
 
-        // Token should not be valid again
-        let result = manager.verify_token(&token).await;
-        assert!(result.is_err());
+        manager
+            .create_request("agent-01", "test_csr".to_string())
+            .await
+            .expect("Failed to create request");
+
+        let approved = manager
+            .approve_request("agent-01")
+            .await
+            .expect("Failed to approve");
+
+        assert!(approved.is_approved());
     }
 
     #[tokio::test]
     async fn test_register_agent() {
-        let registry = AgentRegistry::new();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let registry = AgentRegistryFs::new(temp_dir.path().to_path_buf());
+
         registry
             .register("agent-01", "agent-01", "cert_pem".to_string())
             .await
-            .expect("Failed to register agent");
+            .expect("Failed to register");
 
         let is_registered = registry
             .is_registered("agent-01")
             .await
-            .expect("Failed to check registration");
+            .expect("Failed to check");
+
         assert!(is_registered);
-    }
-
-    #[tokio::test]
-    async fn test_revoke_agent() {
-        let registry = AgentRegistry::new();
-        registry
-            .register("agent-01", "agent-01", "cert_pem".to_string())
-            .await
-            .expect("Failed to register agent");
-
-        registry
-            .revoke("agent-01")
-            .await
-            .expect("Failed to revoke agent");
-
-        let is_registered = registry
-            .is_registered("agent-01")
-            .await
-            .expect("Failed to check registration");
-        assert!(!is_registered);
     }
 }

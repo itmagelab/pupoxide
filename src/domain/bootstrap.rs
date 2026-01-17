@@ -1,33 +1,50 @@
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-/// Bootstrap token for agent registration
+/// Bootstrap request pending approval from admin
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
-pub struct BootstrapToken {
-    /// The token string (UUID-like, random)
-    pub token: String,
-    /// Node ID this token is for
+pub struct BootstrapRequest {
+    /// Node ID requesting to bootstrap
+    #[validate(length(min = 1, max = 255))]
     pub node_id: String,
-    /// Unix timestamp when token was issued
-    pub issued_at: i64,
-    /// Unix timestamp when token expires
-    pub expires_at: i64,
-    /// Unix timestamp when token was used (None if not yet used)
-    pub used_at: Option<i64>,
+    /// PEM-encoded Certificate Signing Request
+    #[validate(length(min = 1))]
+    pub csr: String,
+    /// Unix timestamp when request was created
+    pub requested_at: i64,
+    /// Status of the request: "pending", "approved", "rejected"
+    pub status: String,
 }
 
-impl BootstrapToken {
-    /// Check if token is still valid
-    pub fn is_valid(&self) -> bool {
-        let now = chrono::Utc::now().timestamp();
-        self.used_at.is_none() && now < self.expires_at
+impl BootstrapRequest {
+    pub fn is_pending(&self) -> bool {
+        self.status == "pending"
     }
 
-    /// Check if token has expired
-    pub fn is_expired(&self) -> bool {
-        let now = chrono::Utc::now().timestamp();
-        now >= self.expires_at
+    pub fn is_approved(&self) -> bool {
+        self.status == "approved"
     }
+
+    pub fn approve(&mut self) {
+        self.status = "approved".to_string();
+    }
+
+    pub fn reject(&mut self) {
+        self.status = "rejected".to_string();
+    }
+}
+
+/// Bootstrap request response (sent to agent)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BootstrapResponse {
+    /// Status: "pending", "approved", or "rejected"
+    pub status: String,
+    /// Message for the agent
+    pub message: String,
+    /// Signed certificate (only if approved)
+    pub certificate: Option<String>,
+    /// CA certificate (only if approved)
+    pub ca_certificate: Option<String>,
 }
 
 /// Registered agent information
@@ -39,32 +56,20 @@ pub struct RegisteredAgent {
     pub cert_cn: String,
     /// PEM-encoded signed certificate
     pub certificate_pem: String,
-    /// Unix timestamp of registration
-    pub registered_at: i64,
+    /// Unix timestamp of registration/approval
+    pub approved_at: i64,
     /// Last successful contact with master
     pub last_seen: Option<i64>,
     /// Is agent currently active/trusted
     pub is_active: bool,
 }
 
-/// Bootstrap request payload (sent by agent)
-#[derive(Debug, Serialize, Deserialize, Validate)]
-pub struct BootstrapRequest {
-    /// Node ID requesting bootstrap
-    #[validate(length(min = 1, max = 255))]
+/// Request listing (for admin UI)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BootstrapRequestMetadata {
     pub node_id: String,
-    /// PEM-encoded Certificate Signing Request
-    #[validate(length(min = 1))]
-    pub csr: String,
-}
-
-/// Bootstrap response payload (sent by master)
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BootstrapResponse {
-    /// PEM-encoded signed certificate for agent
-    pub certificate: String,
-    /// PEM-encoded CA certificate (for agent to verify server)
-    pub ca_certificate: String,
+    pub status: String,
+    pub requested_at: i64,
 }
 
 #[cfg(test)]
@@ -72,46 +77,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_bootstrap_token_validity() {
-        let now = chrono::Utc::now().timestamp();
-        let token = BootstrapToken {
-            token: "test_token".to_string(),
+    fn test_bootstrap_request_status() {
+        let mut req = BootstrapRequest {
             node_id: "agent-01".to_string(),
-            issued_at: now,
-            expires_at: now + 3600,
-            used_at: None,
+            csr: "test_csr".to_string(),
+            requested_at: 1234567890,
+            status: "pending".to_string(),
         };
 
-        assert!(token.is_valid());
-        assert!(!token.is_expired());
-    }
+        assert!(req.is_pending());
+        assert!(!req.is_approved());
 
-    #[test]
-    fn test_bootstrap_token_expired() {
-        let now = chrono::Utc::now().timestamp();
-        let token = BootstrapToken {
-            token: "test_token".to_string(),
-            node_id: "agent-01".to_string(),
-            issued_at: now - 7200,
-            expires_at: now - 3600,
-            used_at: None,
-        };
-
-        assert!(!token.is_valid());
-        assert!(token.is_expired());
-    }
-
-    #[test]
-    fn test_bootstrap_token_used() {
-        let now = chrono::Utc::now().timestamp();
-        let token = BootstrapToken {
-            token: "test_token".to_string(),
-            node_id: "agent-01".to_string(),
-            issued_at: now,
-            expires_at: now + 3600,
-            used_at: Some(now + 100),
-        };
-
-        assert!(!token.is_valid());
+        req.approve();
+        assert!(req.is_approved());
+        assert!(!req.is_pending());
     }
 }

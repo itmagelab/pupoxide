@@ -36,10 +36,14 @@ pub enum Commands {
         #[arg(long, default_value = "false")]
         dry_run: bool,
     },
-    /// Start the Pupoxide Master server
+    /// Manage the Pupoxide Master server
     Master {
-        #[arg(short, long, default_value = "8080")]
-        port: u16,
+        #[command(subcommand)]
+        action: MasterAction,
+
+        /// Path to the configuration directory
+        #[arg(short, long)]
+        config: Option<PathBuf>,
     },
     /// Start the Pupoxide Agent
     Agent {
@@ -50,13 +54,17 @@ pub enum Commands {
         #[arg(short, long)]
         environment: String,
 
-        /// Bootstrap agent with the master (generate certificate and register)
+        /// Bootstrap agent with the master (submit CSR request)
         #[arg(long, default_value = "false")]
         bootstrap: bool,
 
-        /// Bootstrap token (required when using --bootstrap)
-        #[arg(long)]
-        token: Option<String>,
+        /// Check bootstrap approval status (polls until approved)
+        #[arg(long, default_value = "false")]
+        check: bool,
+
+        /// Timeout for --check in seconds
+        #[arg(long, default_value = "600")]
+        check_timeout: u64,
 
         /// Run in dry-run mode without making changes
         #[arg(long, default_value = "false")]
@@ -66,4 +74,27 @@ pub enum Commands {
         #[arg(short, long)]
         cert_dir: Option<PathBuf>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum MasterAction {
+    /// Start the Master server
+    Start {
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+    },
+    /// Sign certificate for a pending bootstrap request
+    Sign {
+        /// Node ID to approve
+        #[arg(short, long)]
+        node: String,
+    },
+    /// Reject a pending bootstrap request
+    Reject {
+        /// Node ID to reject
+        #[arg(short, long)]
+        node: String,
+    },
+    /// List pending bootstrap requests
+    List,
 }
