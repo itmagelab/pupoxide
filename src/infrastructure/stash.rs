@@ -53,38 +53,47 @@ impl Stash {
         debug!("Stash lookup for key: {}", key);
 
         for entry in &self.config.hierarchy {
-            let mut paths = Vec::new();
-            if let Some(p) = &entry.path {
-                paths.push(p.clone());
-            }
-            if let Some(ps) = &entry.paths {
-                paths.extend(ps.clone());
-            }
-
-            for path_pattern in paths {
-                let path_str = self.interpolate(&path_pattern, facts);
-                let file_path = self.data_dir.join(&path_str);
-
-                debug!("Checking Stash file: {:?}", file_path);
-
-                if file_path.exists() {
-                    match self.read_yaml_value(&file_path, key) {
-                        Ok(Some(v)) => return Some(v),
-                        Ok(None) => continue, // Key not found in this file
-                        Err(e) => {
-                            warn!("Error reading Stash file {:?}: {}", file_path, e);
-                            continue;
-                        }
-                    }
-                }
+            if let Some(value) = self.lookup_in_entry(entry, key, facts) {
+                return Some(value);
             }
         }
 
         // Check defaults if configured
-        if let Some(defaults) = &self.config.defaults
-            && let Some(v) = defaults.get(key)
-        {
-            return Some(v.clone());
+        self.config.defaults.as_ref().and_then(|defaults| {
+            defaults.get(key).cloned()
+        })
+    }
+
+    fn lookup_in_entry(
+        &self,
+        entry: &HierarchyEntry,
+        key: &str,
+        facts: &Facts,
+    ) -> Option<Value> {
+        let mut paths = Vec::new();
+        if let Some(p) = &entry.path {
+            paths.push(p.clone());
+        }
+        if let Some(ps) = &entry.paths {
+            paths.extend(ps.clone());
+        }
+
+        for path_pattern in paths {
+            let path_str = self.interpolate(&path_pattern, facts);
+            let file_path = self.data_dir.join(&path_str);
+
+            debug!("Checking Stash file: {:?}", file_path);
+
+            if file_path.exists() {
+                match self.read_yaml_value(&file_path, key) {
+                    Ok(Some(v)) => return Some(v),
+                    Ok(None) => continue,
+                    Err(e) => {
+                        warn!("Error reading Stash file {:?}: {}", file_path, e);
+                        continue;
+                    }
+                }
+            }
         }
 
         None

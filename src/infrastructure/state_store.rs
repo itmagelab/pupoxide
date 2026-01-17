@@ -2,6 +2,7 @@ use crate::domain::{
     Transaction,
     error::Result,
 };
+use anyhow::Context;
 use std::fs;
 use std::path::PathBuf;
 
@@ -18,36 +19,33 @@ impl StateStore {
         let path = self.get_transaction_path(&transaction.id);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
-                .map_err(|e| anyhow::anyhow!("Failed to create state dir: {}", e))?;
+                .context("Failed to create state dir")?;
         }
-        let json = serde_json::to_string_pretty(transaction).map_err(|e| {
-            anyhow::anyhow!("Failed to serialize transaction: {}", e)
-        })?;
+        let json = serde_json::to_string_pretty(transaction)
+            .context("Failed to serialize transaction")?;
         fs::write(path, json)
-            .map_err(|e| anyhow::anyhow!("Failed to write transaction: {}", e))?;
+            .context("Failed to write transaction")?;
 
         // Update 'latest' pointer
         let latest_path = self.root.join("latest_transaction");
-        fs::write(latest_path, &transaction.id).map_err(|e| {
-            anyhow::anyhow!("Failed to update latest transaction: {}", e)
-        })?;
+        fs::write(latest_path, &transaction.id)
+            .context("Failed to update latest transaction")?;
 
         Ok(())
     }
 
     pub fn load_transaction(&self, id: &str) -> Result<Transaction> {
         let path = self.get_transaction_path(id);
-        let json = fs::read_to_string(path).map_err(|e| {
-            anyhow::anyhow!("Failed to read transaction {}: {}", id, e)
-        })?;
+        let json = fs::read_to_string(path)
+            .context(format!("Failed to read transaction {}", id))?;
         serde_json::from_str(&json)
-            .map_err(|e| anyhow::anyhow!("Failed to deserialize transaction: {}", e))
+            .context("Failed to deserialize transaction")
     }
 
     pub fn load_latest_transaction(&self) -> Result<Transaction> {
         let latest_path = self.root.join("latest_transaction");
         let id = fs::read_to_string(latest_path)
-            .map_err(|e| anyhow::anyhow!("No previous transaction found: {}", e))?;
+            .context("No previous transaction found")?;
         self.load_transaction(id.trim())
     }
 

@@ -9,24 +9,21 @@ impl Facter {
         let mut sys = System::new_all();
         sys.refresh_all();
 
-        if let Some(hostname) = System::host_name() {
-            facts.insert("hostname".to_string(), hostname);
-        }
-
-        if let Some(os_name) = System::name() {
-            facts.insert("os_family".to_string(), os_name);
-        }
-
-        if let Some(os_version) = System::os_version() {
-            facts.insert("os_version".to_string(), os_version);
-        }
-
-        if let Some(kernel_version) = System::kernel_version() {
-            facts.insert("kernel_version".to_string(), kernel_version);
-        }
-
-        facts.insert("arch".to_string(), System::cpu_arch().to_string());
-
+        Self::add_system_facts(&mut facts);
         facts
+    }
+
+    fn add_system_facts(facts: &mut Facts) {
+        Self::add_fact(facts, "hostname", System::host_name());
+        Self::add_fact(facts, "os_family", System::name());
+        Self::add_fact(facts, "os_version", System::os_version());
+        Self::add_fact(facts, "kernel_version", System::kernel_version());
+        facts.insert("arch".to_string(), System::cpu_arch().to_string());
+    }
+
+    fn add_fact(facts: &mut Facts, key: &str, value: Option<String>) {
+        if let Some(v) = value {
+            facts.insert(key.to_string(), v);
+        }
     }
 }

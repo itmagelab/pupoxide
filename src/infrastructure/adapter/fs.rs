@@ -94,18 +94,32 @@ impl FsAdapter {
         }
 
         // Owner / Group
-        let uid = if let Some(owner_name) = owner {
+        let uid = Self::resolve_user(owner).await?;
+        let gid = Self::resolve_group(group).await?;
+
+        if uid.is_some() || gid.is_some() {
+            chown(path, uid, gid)
+                .map_err(|e| anyhow::anyhow!("Failed to chown: {}", e))?;
+        }
+
+        Ok(())
+    }
+
+    async fn resolve_user(owner: &Option<String>) -> Result<Option<nix::unistd::Uid>> {
+        if let Some(owner_name) = owner {
             let user = User::from_name(owner_name)
                 .map_err(|e| {
                     anyhow::anyhow!("Failed to resolve user '{}': {}", owner_name, e)
                 })?
                 .ok_or_else(|| anyhow::anyhow!("User '{}' not found", owner_name))?;
-            Some(user.uid)
+            Ok(Some(user.uid))
         } else {
-            None
-        };
+            Ok(None)
+        }
+    }
 
-        let gid = if let Some(group_name) = group {
+    async fn resolve_group(group: &Option<String>) -> Result<Option<nix::unistd::Gid>> {
+        if let Some(group_name) = group {
             let grp = Group::from_name(group_name)
                 .map_err(|e| {
                     anyhow::anyhow!(
@@ -116,17 +130,10 @@ impl FsAdapter {
                 .ok_or_else(|| {
                     anyhow::anyhow!("Group '{}' not found", group_name)
                 })?;
-            Some(grp.gid)
+            Ok(Some(grp.gid))
         } else {
-            None
-        };
-
-        if uid.is_some() || gid.is_some() {
-            chown(path, uid, gid)
-                .map_err(|e| anyhow::anyhow!("Failed to chown: {}", e))?;
+            Ok(None)
         }
-
-        Ok(())
     }
 
     async fn get_file_ensure(&self, file: &FileResource) -> Result<Ensure> {
