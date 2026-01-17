@@ -1,8 +1,18 @@
-use crate::application::engine::{CURRENT_EXEC_CTX, ExecutionContext, ModuleHandle};
+use crate::application::engine::{CURRENT_EXEC_CTX, ExecutionContext, InclusionType, ModuleHandle};
 use crate::domain::resource::{Ensure, Resource};
 use rhai::{Dynamic, Map};
 use tracing::warn;
 use anyhow::Result;
+
+// Helper to lock a mutex safely or log warning
+fn lock_or_warn<'a, T>(
+    mutex: &'a std::sync::Mutex<T>,
+    label: &str,
+) -> Option<std::sync::MutexGuard<'a, T>> {
+    mutex.lock().map_err(|e| {
+        warn!("Failed to lock {}: {}", label, e);
+    }).ok()
+}
 
 pub struct DslContext;
 
@@ -25,10 +35,11 @@ impl DslContext {
                 .current_inclusion_type
                 .lock()
                 .map_err(|e| anyhow::anyhow!("Failed to lock current inclusion type: {}", e))?;
-            if *current_type == Some(crate::application::engine::InclusionType::Role)
-                && !matches!(resource, Resource::Meta(_))
-            {
-                return Err(anyhow::anyhow!("Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.", resource.id()));
+            if *current_type == Some(InclusionType::Role) && !matches!(resource, Resource::Meta(_)) {
+                return Err(anyhow::anyhow!(
+                    "Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.",
+                    resource.id()
+                ));
             }
         }
 
@@ -42,15 +53,10 @@ impl DslContext {
 
     pub fn add_dependency_between_ids(lhs_id: &str, rhs_id: &str) {
         let exec_ctx = Self::get_exec_ctx();
-        let mut resources = match exec_ctx.resources.lock() {
-            Ok(guard) => guard,
-            Err(e) => {
-                warn!("Failed to lock resources: {}", e);
-                return;
+        if let Some(mut resources) = lock_or_warn(&exec_ctx.resources, "resources") {
+            if let Some(res) = resources.iter_mut().find(|r| r.id() == rhs_id) {
+                res.add_dependency(lhs_id.to_string());
             }
-        };
-        if let Some(res) = resources.iter_mut().find(|r| r.id() == rhs_id) {
-            res.add_dependency(lhs_id.to_string());
         }
     }
 
@@ -72,34 +78,20 @@ impl DslContext {
     pub fn extract_dependencies(params: &Map, exec_ctx: &ExecutionContext) -> Vec<String> {
         let mut dependencies = Vec::new();
 
-        // Get current module and inclusion type
-        let current_info = {
-            let stack = match exec_ctx.module_stack.lock() {
-                Ok(guard) => guard,
-                Err(e) => {
-                    warn!("Failed to lock module stack: {}", e);
-                    return dependencies;
-                }
-            };
-                
-            let current_type = match exec_ctx.current_inclusion_type.lock() {
-                Ok(guard) => guard,
-                Err(e) => {
-                    warn!("Failed to lock current inclusion type: {}", e);
-                    return dependencies;
-                }
-            };
-
-            let current_module = stack.last().cloned();
-            let inclusion_type = current_type.clone().unwrap_or(crate::application::engine::InclusionType::Module);
-
-            (current_module, inclusion_type)
-        };
-
-        if let (Some(curr_mod), curr_type) = current_info {
-            dependencies.push(format!("{:?}Start[{}]", curr_type, curr_mod));
+        // Get current module and inclusion type with safe locking
+        if let (Some(stack_guard), Some(type_guard)) = (
+            lock_or_warn(&exec_ctx.module_stack, "module_stack"),
+            lock_or_warn(&exec_ctx.current_inclusion_type, "current_inclusion_type"),
+        ) {
+            if let Some(curr_mod) = stack_guard.last() {
+                let inclusion_type = type_guard
+                    .clone()
+                    .unwrap_or(InclusionType::Module);
+                dependencies.push(format!("{:?}Start[{}]", inclusion_type, curr_mod));
+            }
         }
 
+        // Add explicit dependencies from params
         if let Some(req) = params.get("require") {
             Self::push_dependency(&mut dependencies, req.clone());
         }
@@ -108,12 +100,13 @@ impl DslContext {
     }
 
     pub fn push_dependency(dependencies: &mut Vec<String>, req: Dynamic) {
-        if let Some(dep_res) = req.clone().try_cast::<Resource>() {
+        // Try to extract dependency in order of specificity
+        if let Some(m_h) = req.clone().try_cast::<ModuleHandle>() {
+            dependencies.push(m_h.end_id);
+        } else if let Some(dep_res) = req.clone().try_cast::<Resource>() {
             dependencies.push(dep_res.id().to_string());
         } else if let Some(dep_id) = req.clone().try_cast::<String>() {
             dependencies.push(dep_id);
-        } else if let Some(m_h) = req.clone().try_cast::<ModuleHandle>() {
-            dependencies.push(m_h.end_id);
         } else if let Some(m) = req.clone().try_cast::<rhai::Shared<rhai::Module>>() {
             if let Some(m_h) = m
                 .get_var("module_handle")

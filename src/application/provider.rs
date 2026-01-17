@@ -20,6 +20,13 @@ impl ProviderRegistry {
         }
     }
 
+    /// Register a provider (builder style - returns self)
+    pub fn with_provider(mut self, provider: Arc<dyn ResourceProvider>) -> Self {
+        self.providers.push(provider);
+        self
+    }
+
+    /// Register a provider (mutating style)
     pub fn register(&mut self, provider: Arc<dyn ResourceProvider>) {
         self.providers.push(provider);
     }

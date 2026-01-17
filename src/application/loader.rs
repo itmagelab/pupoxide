@@ -11,12 +11,14 @@ impl EnvironmentLoader {
         Self { base_path }
     }
 
+    fn environment_path(&self, env_name: &str) -> PathBuf {
+        self.base_path.join("environments").join(env_name)
+    }
+
     /// Finds the entry point manifest for a given environment (site.rhai)
     pub fn get_site_manifest(&self, env_name: &str) -> Result<PathBuf> {
         let path = self
-            .base_path
-            .join("environments")
-            .join(env_name)
+            .environment_path(env_name)
             .join("manifests")
             .join("site.rhai");
 
@@ -32,10 +34,7 @@ impl EnvironmentLoader {
 
     /// Returns the modules path for a given environment
     pub fn get_modules_path(&self, env_name: &str) -> PathBuf {
-        self.base_path
-            .join("environments")
-            .join(env_name)
-            .join("modules")
+        self.environment_path(env_name).join("modules")
     }
 
     /// Finds a module's entry point (init.rhai)
