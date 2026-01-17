@@ -6,28 +6,72 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing::warn;
 
+// Helper to lock a mutex safely or return an error
+fn lock_or_err<'a, T>(mutex: &'a Arc<Mutex<T>>, label: &str) -> std::result::Result<std::sync::MutexGuard<'a, T>, Box<rhai::EvalAltResult>> {
+    mutex.lock().map_err(|e| {
+        warn!("Failed to lock {}: {}", label, e);
+        Box::new(rhai::EvalAltResult::ErrorRuntime(
+            format!("Failed to lock {}: {}", label, e).into(),
+            rhai::Position::NONE,
+        ))
+    })
+}
+
+// Resolve the full path for an inclusion based on type and name
+fn resolve_inclusion_path(
+    inc_type: InclusionType,
+    name: &str,
+    current_path: &PathBuf,
+    base_path: Option<&PathBuf>,
+) -> std::result::Result<PathBuf, Box<rhai::EvalAltResult>> {
+    let full_path = if name.starts_with(".") {
+        // Relative path (e.g., import "./utils")
+        let mut p = current_path
+            .parent()
+            .unwrap_or(current_path)
+            .join(name);
+        if p.extension().is_none() {
+            p.set_extension("rhai");
+        }
+        p
+    } else {
+        // Module/Role/Profile path
+        let bp = base_path.ok_or_else(|| {
+            Box::new(rhai::EvalAltResult::ErrorRuntime(
+                format!("Base path not set, cannot include '{}' ({:?})", name, inc_type).into(),
+                rhai::Position::NONE,
+            ))
+        })?;
+
+        match inc_type {
+            InclusionType::Module => bp.join(name).join("manifests").join("init.rhai"),
+            InclusionType::Role => bp
+                .parent()
+                .unwrap_or(bp)
+                .join("role")
+                .join(format!("{}.rhai", name)),
+            InclusionType::Profile => bp
+                .parent()
+                .unwrap_or(bp)
+                .join("profile")
+                .join(format!("{}.rhai", name)),
+        }
+    };
+
+    Ok(full_path)
+}
+
 pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
     let m_path = module_path.clone();
 
     let create_include_fn = |inc_type: InclusionType| {
         let m_path = m_path.clone();
-        move |ctx: NativeCallContext,
-              name: String|
-              -> std::result::Result<ModuleHandle, Box<rhai::EvalAltResult>> {
+        move |ctx: NativeCallContext, name: String| -> std::result::Result<ModuleHandle, Box<rhai::EvalAltResult>> {
             let exec_ctx = DslContext::get_exec_ctx();
 
             // Check constraints: Roles can only include Profiles
             {
-                let current_type = match exec_ctx.current_inclusion_type.lock() {
-                    Ok(guard) => guard,
-                    Err(e) => {
-                        warn!("Failed to lock current inclusion type: {}", e);
-                        return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                            format!("Failed to lock current inclusion type: {}", e).into(),
-                            rhai::Position::NONE,
-                        )));
-                    }
-                };
+                let current_type = lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
                 if *current_type == Some(InclusionType::Role) && inc_type != InclusionType::Profile {
                     return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
                         "Roles can ONLY include profiles. Technical modules or other roles are not allowed.".into(),
@@ -42,227 +86,121 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
                 end_id: format!("{:?}End[{}]", inc_type, name),
             };
 
-            let mut included = match exec_ctx.included_modules.lock() {
-                Ok(guard) => guard,
-                Err(e) => {
-                    warn!("Failed to lock included modules: {}", e);
-                    return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                        format!("Failed to lock included modules: {}", e).into(),
-                        rhai::Position::NONE,
-                    )));
-                }
-            };
+            // Check if already included
+            let mut included = lock_or_err(&exec_ctx.included_modules, "included_modules")?;
             if included.contains(&handle.start_id) {
                 return Ok(handle);
             }
             included.insert(handle.start_id.clone());
             drop(included);
 
-            let mut current_p = match exec_ctx.current_path.lock() {
-                Ok(guard) => guard,
-                Err(e) => {
-                    warn!("Failed to lock current path: {}", e);
-                    return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                        format!("Failed to lock current path: {}", e).into(),
-                        rhai::Position::NONE,
-                    )));
-                }
-            };
-            let parent_dir = current_p.parent().unwrap_or(&current_p);
+            // Get current path and base path for resolution
+            let current_p = lock_or_err(&exec_ctx.current_path, "current_path")?;
+            let base = lock_or_err(&m_path, "module_path")?;
+            let full_path = resolve_inclusion_path(inc_type, &name, &*current_p, base.as_ref())?;
+            drop(current_p);
+            drop(base);
 
-            let full_path = if name.starts_with(".") {
-                let mut p = parent_dir.join(&name);
-                if p.extension().is_none() {
-                    p.set_extension("rhai");
-                }
-                p
-            } else {
-                let base = match m_path.lock() {
-                    Ok(guard) => guard,
-                    Err(e) => {
-                        warn!("Failed to lock module path: {}", e);
-                        return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                            format!("Failed to lock module path: {}", e).into(),
-                            rhai::Position::NONE,
-                        )));
-                    }
-                };
-                if let Some(ref bp) = *base {
-                    match inc_type {
-                        InclusionType::Module => bp.join(&name).join("manifests").join("init.rhai"),
-                        InclusionType::Role => bp
-                            .parent()
-                            .unwrap_or(bp)
-                            .join("role")
-                            .join(format!("{}.rhai", name)),
-                        InclusionType::Profile => bp
-                            .parent()
-                            .unwrap_or(bp)
-                            .join("profile")
-                            .join(format!("{}.rhai", name)),
-                    }
-                } else {
-                    return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                        format!("Base path not set, cannot include '{}' ({:?})", name, inc_type)
-                            .into(),
-                        rhai::Position::NONE,
-                    )));
-                }
+            if !full_path.exists() {
+                return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
+                    format!("{:?} {} not found at {}", inc_type, name, full_path.display()).into(),
+                    rhai::Position::NONE,
+                )));
+            }
+
+            // Track resource count before inclusion
+            let start_resource_count = {
+                let resources = lock_or_err(&exec_ctx.resources, "resources")?;
+                resources.len()
             };
 
-            if full_path.exists() {
-                let start_resource_count = match exec_ctx.resources.lock() {
-                    Ok(guard) => guard.len(),
-                    Err(e) => {
-                        warn!("Failed to lock resources: {}", e);
-                        return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                            format!("Failed to lock resources: {}", e).into(),
-                            rhai::Position::NONE,
-                        )));
+            // Add module start marker
+            {
+                let mut resources = lock_or_err(&exec_ctx.resources, "resources")?;
+                let mut dependencies = Vec::new();
+                if let Ok(stack) = exec_ctx.module_stack.lock() {
+                    if let Some(parent) = stack.last() {
+                        dependencies.push(format!("ModuleStart[{}]", parent));
                     }
-                };
-
-                {
-                    let mut resources = match exec_ctx.resources.lock() {
-                        Ok(guard) => guard,
-                        Err(e) => {
-                            warn!("Failed to lock resources: {}", e);
-                            return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                                format!("Failed to lock resources: {}", e).into(),
-                                rhai::Position::NONE,
-                            )));
-                        }
-                    };
-                    let mut dependencies = Vec::new();
-
-                    // Add dependency on parent module if exists
-                    if let Ok(stack) = exec_ctx.module_stack.lock() {
-                        if let Some(parent) = stack.last() {
-                            dependencies.push(format!("ModuleStart[{}]", parent));
-                        }
-                    }
-                    
-                    resources.push(Resource::Meta(MetaResource {
-                        id: handle.start_id.clone(),
-                        kind: MetaKind::ModuleStart,
-                        dependencies,
-                    }));
                 }
+                resources.push(Resource::Meta(MetaResource {
+                    id: handle.start_id.clone(),
+                    kind: MetaKind::ModuleStart,
+                    dependencies,
+                }));
+            }
 
-                let module_stack_result = exec_ctx.module_stack.lock();
-                if let Ok(mut stack) = module_stack_result {
-                    stack.push(name.clone());
-                } else {
-                    warn!("Failed to lock module stack");
-                    return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                        "Failed to lock module stack".into(),
-                        rhai::Position::NONE,
-                    )));
-                }
+            // Push module to stack
+            {
+                let mut stack = lock_or_err(&exec_ctx.module_stack, "module_stack")?;
+                stack.push(name.clone());
+            }
 
-                // Save old inclusion context and set new one
-                let old_inclusion_type = {
-                    let mut current = match exec_ctx.current_inclusion_type.lock() {
-                        Ok(guard) => guard,
-                        Err(e) => {
-                            warn!("Failed to lock current inclusion type: {}", e);
-                            return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                                "Failed to lock current inclusion type".into(),
-                                rhai::Position::NONE,
-                            )));
-                        }
-                    };
-                    std::mem::replace(&mut *current, Some(inc_type))
-                };
+            // Save and update inclusion context
+            let old_inclusion_type = {
+                let mut current = lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
+                std::mem::replace(&mut *current, Some(inc_type))
+            };
 
-                let old_path = std::mem::replace(&mut *current_p, full_path.clone());
-                drop(current_p);
+            // Save and update current path
+            let old_path = {
+                let mut current = lock_or_err(&exec_ctx.current_path, "current_path")?;
+                std::mem::replace(&mut *current, full_path.clone())
+            };
 
+            // Prepare and execute the included file
+            let eval_res = {
                 let mut scope = rhai::Scope::new();
                 let mut facts_map = rhai::Map::new();
                 for (k, v) in exec_ctx.facts.values.clone() {
                     facts_map.insert(k.into(), v.into());
                 }
                 scope.set_value("facts", facts_map);
-
-                let eval_res = ctx.engine().eval_file_with_scope::<Dynamic>(&mut scope, full_path).map_err(|e| {
+                
+                ctx.engine().eval_file_with_scope::<Dynamic>(&mut scope, full_path).map_err(|e| {
                     Box::new(rhai::EvalAltResult::ErrorRuntime(
                         format!("Failed to include {:?} '{}': {}", inc_type, name, e).into(),
                         rhai::Position::NONE,
                     ))
-                });
+                })
+            };
 
-                // Restore inclusion context
-                {
-                    let mut current = match exec_ctx.current_inclusion_type.lock() {
-                        Ok(guard) => guard,
-                        Err(e) => {
-                            warn!("Failed to lock current inclusion type: {}", e);
-                            return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                                "Failed to lock current inclusion type".into(),
-                                rhai::Position::NONE,
-                            )));
-                        }
-                    };
-                    *current = old_inclusion_type;
-                }
-
-                let current_path_result = exec_ctx.current_path.lock();
-                let mut current_p = match current_path_result {
-                    Ok(guard) => guard,
-                    Err(e) => {
-                        warn!("Failed to lock current path: {}", e);
-                        return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                            format!("Failed to lock current path: {}", e).into(),
-                            rhai::Position::NONE,
-                        )));
-                    }
-                };
-                *current_p = old_path;
-
-                let module_stack_result = exec_ctx.module_stack.lock();
-                if let Ok(mut stack) = module_stack_result {
-                    stack.pop();
-                } else {
-                    warn!("Failed to lock module stack");
-                    return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                        "Failed to lock module stack".into(),
-                        rhai::Position::NONE,
-                    )));
-                }
-
-                let _ = eval_res?;
-
-                {
-                    let mut resources = match exec_ctx.resources.lock() {
-                        Ok(guard) => guard,
-                        Err(e) => {
-                            warn!("Failed to lock resources: {}", e);
-                            return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                                format!("Failed to lock resources: {}", e).into(),
-                                rhai::Position::NONE,
-                            )));
-                        }
-                    };
-                    let mut end_deps = vec![handle.start_id.clone()];
-
-                    for i in start_resource_count..resources.len() {
-                        end_deps.push(resources[i].id().to_string());
-                    }
-
-                    resources.push(Resource::Meta(MetaResource {
-                        id: handle.end_id.clone(),
-                        kind: MetaKind::ModuleEnd,
-                        dependencies: end_deps,
-                    }));
-                }
-
-                return Ok(handle);
+            // Restore inclusion context
+            {
+                let mut current = lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
+                *current = old_inclusion_type;
             }
-            Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                format!("{:?} {} not found at {}", inc_type, name, full_path.display()).into(),
-                rhai::Position::NONE,
-            )))
+
+            // Restore current path
+            {
+                let mut current = lock_or_err(&exec_ctx.current_path, "current_path")?;
+                *current = old_path;
+            }
+
+            // Pop module from stack
+            {
+                let mut stack = lock_or_err(&exec_ctx.module_stack, "module_stack")?;
+                stack.pop();
+            }
+
+            // Check if evaluation succeeded
+            let _ = eval_res?;
+
+            // Add module end marker with all internal resources as dependencies
+            {
+                let mut resources = lock_or_err(&exec_ctx.resources, "resources")?;
+                let mut end_deps = vec![handle.start_id.clone()];
+                for i in start_resource_count..resources.len() {
+                    end_deps.push(resources[i].id().to_string());
+                }
+                resources.push(Resource::Meta(MetaResource {
+                    id: handle.end_id.clone(),
+                    kind: MetaKind::ModuleEnd,
+                    dependencies: end_deps,
+                }));
+            }
+
+            Ok(handle)
         }
     };
 
