@@ -67,23 +67,28 @@ impl DslContext {
     pub fn extract_dependencies(params: &Map, exec_ctx: &ExecutionContext) -> Vec<String> {
         let mut dependencies = Vec::new();
 
-        let stack = exec_ctx
-            .module_stack
-            .lock()
-            .expect("Failed to lock module stack");
-            
-        let inc_stack = exec_ctx
-            .inclusion_stack
-            .lock()
-            .expect("Failed to lock inclusion stack");
+        // Получаем информацию о текущем модуле и типе включения за одну блокировку
+        let current_info = {
+            let stack = exec_ctx
+                .module_stack
+                .lock()
+                .expect("Failed to lock module stack");
+                
+            let inc_stack = exec_ctx
+                .inclusion_stack
+                .lock()
+                .expect("Failed to lock inclusion stack");
 
-        if let Some(curr_mod) = stack.last() {
-             // Default to Module if stack is misaligned (should not happen)
-             let curr_type = inc_stack.last().unwrap_or(&crate::application::engine::InclusionType::Module);
+            let current_module = stack.last().cloned();
+            // Default to Module if stack is misaligned (should not happen)
+            let inclusion_type = inc_stack.last().cloned().unwrap_or(crate::application::engine::InclusionType::Module);
+
+            (current_module, inclusion_type)
+        };
+
+        if let (Some(curr_mod), curr_type) = current_info {
             dependencies.push(format!("{:?}Start[{}]", curr_type, curr_mod));
         }
-        drop(stack);
-        drop(inc_stack);
 
         if let Some(req) = params.get("require") {
             Self::push_dependency(&mut dependencies, req.clone());
