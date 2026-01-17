@@ -1,2 +1,6 @@
 /target
 **/target
+
+# Generated examples files
+examples/certs/
+*.log
