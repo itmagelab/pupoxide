@@ -7,8 +7,12 @@
 
 - **Язык**: Rust (Latest Stable)
 - **Async Runtime**: `tokio`
+- **Web Server**: `axum` (для Master API)
+- **HTTP Client**: `reqwest` (для Agent клиента)
+- **TLS/mTLS**: `tokio-rustls` (Agent-Master коммуникация)
+- **Certificates**: `rcgen` (генерация и подпись CSR)
 - **Database**: PostgreSQL + `sea-orm` + `sea-query`
-- **Error Handling**: `thiserror` (lib/domain), `anyhow` (app/cli)
+- **Error Handling**: `anyhow` (везде)
 - **Logging/Tracing**: `tracing` + `tracing-subscriber`
 - **Serialization**: `serde` + `serde_json` / `serde_yaml`
 - **Validation**: `validator`
