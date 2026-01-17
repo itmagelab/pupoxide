@@ -48,12 +48,22 @@ pub enum Commands {
         #[arg(short, long)]
         node: String,
         #[arg(short, long)]
-        #[arg(short, long)]
         environment: String,
+
+        /// Bootstrap agent with the master (generate certificate and register)
+        #[arg(long, default_value = "false")]
+        bootstrap: bool,
+
+        /// Bootstrap token (required when using --bootstrap)
+        #[arg(long)]
+        token: Option<String>,
 
         /// Run in dry-run mode without making changes
         #[arg(long, default_value = "false")]
         dry_run: bool,
-    },
 
+        /// Optional certificate directory
+        #[arg(short, long)]
+        cert_dir: Option<PathBuf>,
+    },
 }

@@ -1,3 +1,4 @@
+pub mod bootstrap;
 pub mod catalog;
 pub mod dsl;
 pub mod error;
@@ -5,6 +6,7 @@ pub mod facts;
 pub mod resource;
 pub mod transaction;
 
+pub use bootstrap::*;
 pub use catalog::*;
 pub use facts::*;
 pub use resource::*;

@@ -56,7 +56,24 @@ cargo run -- --config ./examples apply --environment production
 
 ### 3. Client-Server Mode
 
-Pupoxide can operate in a Master/Agent architecture.
+Pupoxide can operate in a Master/Agent architecture with secure mutual TLS (mTLS) authentication.
+
+#### Two-Phase Security Model
+
+Pupoxide implements a secure two-phase bootstrap process:
+
+**Phase 1: Bootstrap** (without mTLS)
+- Agent generates a private key and Certificate Signing Request (CSR)
+- Agent sends CSR to Master with a one-time bootstrap token
+- Master verifies the token and signs the certificate
+- Agent saves the signed certificate locally
+
+**Phase 2: Regular Operation** (with mTLS)
+- Agent uses the signed certificate for all communication
+- Master verifies the certificate during TLS handshake
+- All communication is encrypted and mutually authenticated
+
+#### Usage
 
 **Start the Master Server:**
 
@@ -64,10 +81,87 @@ Pupoxide can operate in a Master/Agent architecture.
 cargo run -- --config ./examples master --port 8080
 ```
 
-**Run the Agent:**
+The Master will automatically:
+- Generate a CA certificate at `/etc/pupoxide/ca.pem`
+- Store the CA private key at `/etc/pupoxide/ca.key`
+- Accept agent bootstrap requests with valid tokens
+
+**Bootstrap an Agent** (Phase 1 - one time only):
 
 ```bash
-cargo run -- --config ./examples agent --server http://localhost:8080 --node my-node --environment production
+# Generate a bootstrap token on the master (via admin command)
+# This would be: pupoxide bootstrap-token --node-id agent-01 --ttl 3600
+# For now, you need to generate it manually
+
+BOOTSTRAP_TOKEN="your-generated-token-here"
+
+cargo run -- --config ./examples agent \
+  --server http://localhost:8080 \
+  --node my-node \
+  --environment production \
+  --bootstrap \
+  --token "$BOOTSTRAP_TOKEN"
+```
+
+This will:
+1. Generate a private key locally (never sent to server)
+2. Create a CSR and send it to the Master with the bootstrap token
+3. Receive a signed certificate from the Master
+4. Save certificate and key to `/etc/pupoxide/agents/my-node/`
+
+**Run the Agent** (Phase 2 - regular operation):
+
+Once bootstrap is complete, run the agent with the signed certificate:
+
+```bash
+cargo run -- --config ./examples agent \
+  --server https://localhost:8080 \
+  --node my-node \
+  --environment production
+```
+
+The agent will:
+1. Load the signed certificate and private key
+2. Connect to Master via mTLS
+3. Request the catalog for the node
+4. Apply the configuration
+
+#### Security Features
+
+✅ **Mutual TLS (mTLS)**: Both agent and master verify each other  
+✅ **One-time Bootstrap Token**: Single-use token prevents replay attacks  
+✅ **Dynamic Certificates**: Each agent gets a unique signed certificate  
+✅ **Private Key Protection**: Private keys never leave the agent (0600 permissions)  
+✅ **Encrypted Communication**: All post-bootstrap communication is encrypted
+
+#### Complete Workflow Example
+
+```bash
+# Terminal 1: Start the Master server
+cargo run -- --config ./examples master --port 8080
+
+# Terminal 2: Bootstrap the agent (one time, Phase 1)
+# Generate a token (admin would do this)
+BOOTSTRAP_TOKEN=$(uuidgen)  # or use: $(date +%s | sha256sum | head -c 32)
+
+# Run bootstrap command
+cargo run -- --config ./examples agent \
+  --server http://localhost:8080 \
+  --node agent-01 \
+  --environment production \
+  --bootstrap \
+  --token "$BOOTSTRAP_TOKEN"
+
+# Certificate saved to: /etc/pupoxide/agents/agent-01/
+
+# Terminal 2: Run the agent normally (Phase 2, repeated)
+# After bootstrap is complete, run the agent as usual
+cargo run -- --config ./examples agent \
+  --server https://localhost:8080 \
+  --node agent-01 \
+  --environment production
+
+# The agent will now use mTLS for secure communication
 ```
 
 ## Example Manifest (`site.rhai`)

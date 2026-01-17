@@ -106,17 +106,48 @@ async fn main() -> Result<()> {
         Commands::Master { port } => {
             let loader = EnvironmentLoader::new(cli.config);
             let engine = PupoxideEngine::new(None); // Master might need to load Hiera per request/environment later
-            let state = pupoxide::interface::server::MasterState { engine, loader };
+            
+            // Initialize CA certificate
+            let ca_cert_path = std::path::PathBuf::from("/etc/pupoxide/ca.pem");
+            let ca_key_path = std::path::PathBuf::from("/etc/pupoxide/ca.key");
+            let ca = pupoxide::infrastructure::CertificateAuthority::new_or_load(&ca_cert_path, &ca_key_path)?;
+            
+            // Save CA if not existed
+            ca.save(&ca_cert_path, &ca_key_path)?;
+            
+            let bootstrap_manager = pupoxide::infrastructure::BootstrapTokenManager::new();
+            let agent_registry = pupoxide::infrastructure::AgentRegistry::new();
+            
+            let state = pupoxide::interface::server::MasterState {
+                engine,
+                loader,
+                ca,
+                bootstrap_manager,
+                agent_registry,
+            };
             pupoxide::interface::server::start_master(state, port).await?;
         }
         Commands::Agent {
             server,
             node,
             environment,
+            bootstrap,
+            token,
             dry_run,
+            cert_dir,
         } => {
-            let agent = pupoxide::interface::agent::PupoxideAgent::new(server, node, environment);
-            agent.run(dry_run).await?;
+            let agent = pupoxide::interface::agent::PupoxideAgent::new(server, node, environment, cert_dir);
+            
+            if bootstrap {
+                // Phase 1: Bootstrap mode
+                let bootstrap_token = token.ok_or_else(|| {
+                    anyhow::anyhow!("--token is required when using --bootstrap flag")
+                })?;
+                agent.bootstrap(bootstrap_token).await?;
+            } else {
+                // Phase 2: Regular agent mode
+                agent.run(dry_run).await?;
+            }
         }
     }
 
