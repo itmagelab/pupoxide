@@ -72,7 +72,7 @@ impl DslContext {
     pub fn extract_dependencies(params: &Map, exec_ctx: &ExecutionContext) -> Vec<String> {
         let mut dependencies = Vec::new();
 
-        // Получаем текущий модуль и тип включения
+        // Get current module and inclusion type
         let current_info = {
             let stack = match exec_ctx.module_stack.lock() {
                 Ok(guard) => guard,

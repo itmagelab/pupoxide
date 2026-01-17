@@ -115,7 +115,7 @@ pub struct PupoxideModuleResolver {
 }
 
 impl PupoxideModuleResolver {
-    /// Получает текущий контекст выполнения из локального хранилища потока.
+    /// Gets the current execution context from thread-local storage.
     fn get_context(
         &self,
         pos: rhai::Position,
@@ -123,14 +123,14 @@ impl PupoxideModuleResolver {
         CURRENT_EXEC_CTX.with(|ctx| {
             ctx.borrow().clone().ok_or_else(|| {
                 Box::new(rhai::EvalAltResult::ErrorRuntime(
-                    "Контекст выполнения не найден. Убедитесь, что движок запущен через run_manifest.".into(),
+                    "Execution context not found. Ensure the engine is running via run_manifest.".into(),
                     pos,
                 ))
             })
         })
     }
 
-    /// Определяет полный путь к файлу манифеста или модуля.
+    /// Resolves the full path to a manifest or module file.
     fn resolve_full_path(
         &self,
         path: &str,
@@ -140,27 +140,27 @@ impl PupoxideModuleResolver {
         let current_p = exec_ctx
             .current_path
             .lock()
-            .expect("Не удалось заблокировать текущий путь");
+            .expect("Failed to lock current path");
         let parent_dir = current_p.parent().unwrap_or(&current_p);
 
         let full_path = if path.starts_with(".") {
-            // Относительный путь (например, import "./utils")
+            // Relative path (e.g., import "./utils")
             let mut p = parent_dir.join(path);
             if p.extension().is_none() {
                 p.set_extension("rhai");
             }
             p
         } else {
-            // Путь к модулю (например, import "nginx")
+            // Module path (e.g., import "nginx")
             let base = self
                 .module_path
                 .lock()
-                .expect("Не удалось заблокировать путь к модулям");
+                .expect("Failed to lock module path");
             if let Some(ref bp) = *base {
                 bp.join(path).join("manifests").join("init.rhai")
             } else {
                 return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                    format!("Путь к модулям не установлен, невозможно найти '{}'", path).into(),
+                    format!("Module path not set, cannot resolve '{}'", path).into(),
                     pos,
                 )));
             }
@@ -168,7 +168,7 @@ impl PupoxideModuleResolver {
 
         if !full_path.exists() {
             return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                format!("Файл не найден: {}", full_path.display()).into(),
+                format!("File not found: {}", full_path.display()).into(),
                 pos,
             )));
         }
@@ -185,7 +185,7 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
         path: &str,
         pos: rhai::Position,
     ) -> std::result::Result<Arc<rhai::Module>, Box<rhai::EvalAltResult>> {
-        // 1. Получаем контекст и определяем путь к файлу
+        // 1. Get context and resolve file path
         let exec_ctx = self.get_context(pos)?;
         let full_path = self.resolve_full_path(path, &exec_ctx, pos)?;
 
@@ -196,12 +196,12 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
             end_id: format!("ModuleEnd[{}]", module_name),
         };
 
-        // 2. Создаем начальный мета-ресурс для отслеживания зависимостей модуля
+        // 2. Create initial metadata resource to track module dependencies
         let start_resource_count = {
             let mut resources = exec_ctx
                 .resources
                 .lock()
-                .expect("Не удалось заблокировать ресурсы");
+                .expect("Failed to lock resources");
             let count = resources.len();
             resources.push(Resource::Meta(crate::domain::resource::MetaResource {
                 id: handle.start_id.clone(),
@@ -211,32 +211,32 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
             count
         };
 
-        // 3. Подготавливаем среду для выполнения модуля
+        // 3. Prepare environment for module execution
         exec_ctx
             .module_stack
             .lock()
-            .expect("Не удалось заблокировать стек модулей")
+            .expect("Failed to lock module stack")
             .push(module_name.clone());
 
         let old_path = {
             let mut current_p = exec_ctx
                 .current_path
                 .lock()
-                .expect("Не удалось заблокировать текущий путь");
+                .expect("Failed to lock current path");
             std::mem::replace(&mut *current_p, full_path.clone())
         };
 
-        // 4. Компилируем и выполняем AST
+        // 4. Compile and execute AST
         let mut ast = engine.compile_file(full_path).map_err(|e| {
             Box::new(rhai::EvalAltResult::ErrorRuntime(
-                format!("Ошибка компиляции импорта '{}': {}", path, e).into(),
+                format!("Import compilation error '{}': {}", path, e).into(),
                 pos,
             ))
         })?;
         ast.set_source(path);
 
         let mut scope = rhai::Scope::new();
-        // Пробрасываем "facts" внутрь модуля
+        // Pass "facts" into module scope
         let mut facts_map = Map::new();
         for (k, v) in exec_ctx.facts.values.clone() {
             facts_map.insert(k.into(), v.into());
@@ -245,36 +245,36 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
 
         let eval_res = engine.eval_ast_with_scope::<Dynamic>(&mut scope, &ast);
 
-        // 5. Восстанавливаем состояние после выполнения
+        // 5. Restore state after execution
         {
             let mut current_p = exec_ctx
                 .current_path
                 .lock()
-                .expect("Не удалось заблокировать текущий путь");
+                .expect("Failed to lock current path");
             *current_p = old_path;
         }
         exec_ctx
             .module_stack
             .lock()
-            .expect("Не удалось заблокировать стек модулей")
+            .expect("Failed to lock module stack")
             .pop();
 
         let _ = eval_res.map_err(|e| {
             Box::new(rhai::EvalAltResult::ErrorRuntime(
-                format!("Ошибка выполнения импорта '{}': {}", path, e).into(),
+                format!("Import execution error '{}': {}", path, e).into(),
                 pos,
             ))
         })?;
 
-        // 6. Создаем финальный мета-ресурс, который зависит от всего, что было внутри модуля
+        // 6. Create final metadata resource that depends on all resources in module
         {
             let mut resources = exec_ctx
                 .resources
                 .lock()
-                .expect("Не удалось заблокировать ресурсы");
+                .expect("Failed to lock resources");
             let mut end_deps = vec![handle.start_id.clone()];
 
-            // Модуль считается завершенным только после выполнения всех его ресурсов
+            // Module is completed only after all its resources are executed
             for i in start_resource_count..resources.len() {
                 end_deps.push(resources[i].id().to_string());
             }
@@ -286,7 +286,7 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
             }));
         }
 
-        // 7. Формируем Rhai-модуль для возврата
+        // 7. Create Rhai module to return
         let mut module = rhai::Module::eval_ast_as_new(scope, &ast, engine)?;
         module.set_var("module_handle", handle);
 
