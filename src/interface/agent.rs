@@ -198,6 +198,9 @@ impl PupoxideAgent {
 
     /// Phase 2: Regular operation - Fetch catalog using mTLS
     pub async fn run(&self, dry_run: bool) -> Result<()> {
+        // Acquire exclusive lock - only one instance per agent can run at a time
+        let _lock = self.acquire_lock(300).await?; // 5 minute timeout
+
         info!(
             node_name = %self.node_name,
             environment = %self.environment,
@@ -318,5 +321,71 @@ impl PupoxideAgent {
             .json()
             .await
             .context("Failed to parse catalog from server")
+    }
+
+    /// Acquire an exclusive lock for this agent
+    /// Waits up to timeout_secs for the lock to become available
+    pub async fn acquire_lock(&self, timeout_secs: u64) -> Result<AgentLock> {
+        let lock_file = self.cert_dir.parent()
+            .map(|p| p.join(format!("{}.lock", self.node_name)))
+            .ok_or_else(|| anyhow!("Invalid certificate directory path"))?;
+
+        let timeout = Duration::from_secs(timeout_secs);
+        let start = std::time::Instant::now();
+
+        loop {
+            // Try to create the lock file exclusively (fail if it already exists)
+            match tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&lock_file)
+                .await
+            {
+                Ok(_) => {
+                    info!(node_name = %self.node_name, "Acquired agent lock");
+                    return Ok(AgentLock {
+                        lock_path: lock_file,
+                    });
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    if start.elapsed() > timeout {
+                        return Err(anyhow!(
+                            "Failed to acquire lock for agent {} (timeout after {} seconds)",
+                            self.node_name,
+                            timeout_secs
+                        ));
+                    }
+                    // Wait a bit before trying again
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                Err(e) => {
+                    return Err(anyhow!("Failed to create lock file: {}", e));
+                }
+            }
+        }
+    }
+}
+
+/// Guard for exclusive agent lock - automatically releases lock when dropped
+pub struct AgentLock {
+    lock_path: PathBuf,
+}
+
+impl AgentLock {
+    /// Manually release the lock before the guard is dropped
+    pub async fn release(&self) -> Result<()> {
+        tokio::fs::remove_file(&self.lock_path).await
+            .context("Failed to remove lock file")?;
+        info!(path = ?self.lock_path, "Released agent lock");
+        Ok(())
+    }
+}
+
+impl Drop for AgentLock {
+    fn drop(&mut self) {
+        // Try to remove lock file on drop, but don't panic if it fails
+        if self.lock_path.exists() {
+            let _ = std::fs::remove_file(&self.lock_path);
+        }
     }
 }

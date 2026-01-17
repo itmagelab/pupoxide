@@ -114,6 +114,35 @@ All bootstrap and agent data is stored in the `examples/certs/` directory:
 
 These are all local files and safe to delete to reset the test.
 
+## Agent Lock Mechanism
+
+Pupoxide agents use an exclusive lock file to prevent concurrent execution:
+
+- **Lock File**: `certs/agents/{node_id}.lock`
+- **Behavior**: When an agent starts, it creates a lock file. If another instance tries to start, it waits (polls every 100ms) until the lock is released
+- **Timeout**: Default 300 seconds (5 minutes) - second instance fails if lock isn't released within timeout
+- **Auto-cleanup**: Lock file is automatically removed when agent exits
+
+### Testing Lock Mechanism
+
+```bash
+bash examples/test_agent_lock.sh
+```
+
+This test:
+1. Starts the Master server
+2. Bootstraps agent-01 and approves it
+3. Starts first agent instance (acquires lock)
+4. Starts second agent instance (waits for lock)
+5. Verifies both complete without concurrent execution
+
+Expected output:
+```
+✓ Lock file exists
+✓ Both agents completed
+✓ Lock mechanism ensured sequential execution
+```
+
 ## Cleanup
 
 To reset and run tests again:
@@ -121,6 +150,7 @@ To reset and run tests again:
 ```bash
 rm -rf ./examples/certs
 ```
+
 
 ## Security Notes
 

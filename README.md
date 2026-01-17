@@ -224,16 +224,8 @@ The agent will:
 ✅ **Private Key Protection**: Private keys never leave the agent (0600 permissions)  
 ✅ **Encrypted Communication**: All post-bootstrap communication is encrypted  
 ✅ **Audit Trail**: All requests stored in filesystem for review  
-✅ **Reject Capability**: Admin can reject malicious requests
-
-## Example Manifest (`site.rhai`)
-
-Pupoxide uses Rhai with a custom DSL. Resources are defined using object maps, and dependencies can be expressed using the `require` attribute or the arrow operator `->`.
-
-```rust
-// Load a module
-// examples/environments/production/manifests/site.rhai
-
+✅ **Reject Capability**: Admin can reject malicious requests  
+✅ **Exclusive Lock**: Only one agent instance can run at a time (prevents concurrent execution)
 // Assign role to the current node
 "demo".role;
 ```
