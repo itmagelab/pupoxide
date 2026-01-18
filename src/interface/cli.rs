@@ -74,6 +74,24 @@ pub enum Commands {
         #[arg(short, long)]
         cert_dir: Option<PathBuf>,
     },
+    /// Visualize resource dependency graph for debugging
+    Graph {
+        /// Path to the manifest file
+        #[arg(short, long)]
+        file: PathBuf,
+
+        /// Path to modules directory
+        #[arg(short, long)]
+        module_path: Option<PathBuf>,
+
+        /// Show only specific resource types (file, directory, exec, meta)
+        #[arg(long, value_delimiter = ',')]
+        filter: Option<Vec<String>>,
+
+        /// Maximum depth to display
+        #[arg(long, default_value = "10")]
+        max_depth: usize,
+    },
 }
 
 #[derive(Subcommand)]
