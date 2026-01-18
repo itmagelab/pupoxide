@@ -1,17 +1,20 @@
 use crate::application::engine::{CURRENT_EXEC_CTX, ExecutionContext, InclusionType, ModuleHandle};
 use crate::domain::resource::{Ensure, Resource};
+use anyhow::Result;
 use rhai::{Dynamic, Map};
 use tracing::warn;
-use anyhow::Result;
 
 // Helper to lock a mutex safely or log warning
 fn lock_or_warn<'a, T>(
     mutex: &'a std::sync::Mutex<T>,
     label: &str,
 ) -> Option<std::sync::MutexGuard<'a, T>> {
-    mutex.lock().map_err(|e| {
-        warn!("Failed to lock {}: {}", label, e);
-    }).ok()
+    mutex
+        .lock()
+        .map_err(|e| {
+            warn!("Failed to lock {}: {}", label, e);
+        })
+        .ok()
 }
 
 pub struct DslContext;
@@ -25,17 +28,15 @@ impl DslContext {
         })
     }
 
-    pub fn add_resource(
-        exec_ctx: &ExecutionContext,
-        resource: Resource,
-    ) -> Result<Resource> {
+    pub fn add_resource(exec_ctx: &ExecutionContext, resource: Resource) -> Result<Resource> {
         // Enforce role constraints: Resources cannot be added directly in Roles
         {
             let current_type = exec_ctx
                 .current_inclusion_type
                 .lock()
                 .map_err(|e| anyhow::anyhow!("Failed to lock current inclusion type: {}", e))?;
-            if *current_type == Some(InclusionType::Role) && !matches!(resource, Resource::Meta(_)) {
+            if *current_type == Some(InclusionType::Role) && !matches!(resource, Resource::Meta(_))
+            {
                 return Err(anyhow::anyhow!(
                     "Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.",
                     resource.id()
@@ -79,15 +80,9 @@ impl DslContext {
         let mut dependencies = Vec::new();
 
         // Get current module and inclusion type with safe locking
-        if let (Some(stack_guard), Some(type_guard)) = (
-            lock_or_warn(&exec_ctx.module_stack, "module_stack"),
-            lock_or_warn(&exec_ctx.current_inclusion_type, "current_inclusion_type"),
-        ) {
-            if let Some(curr_mod) = stack_guard.last() {
-                let inclusion_type = type_guard
-                    .clone()
-                    .unwrap_or(InclusionType::Module);
-                dependencies.push(format!("{:?}Start[{}]", inclusion_type, curr_mod));
+        if let Some(stack_guard) = lock_or_warn(&exec_ctx.module_stack, "module_stack") {
+            if let Some((inc_type, curr_mod)) = stack_guard.last() {
+                dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
             }
         }
 

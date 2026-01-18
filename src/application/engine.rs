@@ -26,7 +26,7 @@ pub enum InclusionType {
 pub struct ExecutionContext {
     pub resources: Arc<Mutex<Vec<Resource>>>,
     pub included_modules: Arc<Mutex<HashSet<String>>>,
-    pub module_stack: Arc<Mutex<Vec<String>>>,
+    pub module_stack: Arc<Mutex<Vec<(InclusionType, String)>>>,
     pub current_inclusion_type: Arc<Mutex<Option<InclusionType>>>,
     pub facts: Arc<Facts>,
     pub current_path: Arc<Mutex<PathBuf>>,
@@ -123,7 +123,8 @@ impl PupoxideModuleResolver {
         CURRENT_EXEC_CTX.with(|ctx| {
             ctx.borrow().clone().ok_or_else(|| {
                 Box::new(rhai::EvalAltResult::ErrorRuntime(
-                    "Execution context not found. Ensure the engine is running via run_manifest.".into(),
+                    "Execution context not found. Ensure the engine is running via run_manifest."
+                        .into(),
                     pos,
                 ))
             })
@@ -152,10 +153,7 @@ impl PupoxideModuleResolver {
             p
         } else {
             // Module path (e.g., import "nginx")
-            let base = self
-                .module_path
-                .lock()
-                .expect("Failed to lock module path");
+            let base = self.module_path.lock().expect("Failed to lock module path");
             if let Some(ref bp) = *base {
                 bp.join(path).join("manifests").join("init.rhai")
             } else {
@@ -198,10 +196,7 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
 
         // 2. Create initial metadata resource to track module dependencies
         let start_resource_count = {
-            let mut resources = exec_ctx
-                .resources
-                .lock()
-                .expect("Failed to lock resources");
+            let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
             let count = resources.len();
             resources.push(Resource::Meta(crate::domain::resource::MetaResource {
                 id: handle.start_id.clone(),
@@ -216,7 +211,7 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
             .module_stack
             .lock()
             .expect("Failed to lock module stack")
-            .push(module_name.clone());
+            .push((InclusionType::Module, module_name.clone()));
 
         let old_path = {
             let mut current_p = exec_ctx
@@ -268,15 +263,18 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
 
         // 6. Create final metadata resource that depends on all resources in module
         {
-            let mut resources = exec_ctx
-                .resources
-                .lock()
-                .expect("Failed to lock resources");
-            let mut end_deps = vec![handle.start_id.clone()];
+            let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
+            let mut end_deps = Vec::new();
 
             // Module is completed only after all its resources are executed
-            for i in start_resource_count..resources.len() {
+            // Start from start_resource_count + 1 to skip ModuleStart itself (at start_resource_count)
+            for i in (start_resource_count + 1)..resources.len() {
                 end_deps.push(resources[i].id().to_string());
+            }
+
+            // If no internal resources, depend only on ModuleStart
+            if end_deps.is_empty() {
+                end_deps.push(handle.start_id.clone());
             }
 
             resources.push(Resource::Meta(crate::domain::resource::MetaResource {
@@ -340,8 +338,7 @@ impl PupoxideEngine {
             r
         });
 
-        let _ =
-            eval_res.map_err(|e| anyhow::anyhow!("Rhai execution error: {}", e))?;
+        let _ = eval_res.map_err(|e| anyhow::anyhow!("Rhai execution error: {}", e))?;
 
         let resources = exec_ctx
             .resources

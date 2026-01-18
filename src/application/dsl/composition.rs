@@ -7,7 +7,10 @@ use std::sync::{Arc, Mutex};
 use tracing::warn;
 
 // Helper to lock a mutex safely or return an error
-fn lock_or_err<'a, T>(mutex: &'a Arc<Mutex<T>>, label: &str) -> std::result::Result<std::sync::MutexGuard<'a, T>, Box<rhai::EvalAltResult>> {
+fn lock_or_err<'a, T>(
+    mutex: &'a Arc<Mutex<T>>,
+    label: &str,
+) -> std::result::Result<std::sync::MutexGuard<'a, T>, Box<rhai::EvalAltResult>> {
     mutex.lock().map_err(|e| {
         warn!("Failed to lock {}: {}", label, e);
         Box::new(rhai::EvalAltResult::ErrorRuntime(
@@ -26,10 +29,7 @@ fn resolve_inclusion_path(
 ) -> std::result::Result<PathBuf, Box<rhai::EvalAltResult>> {
     let full_path = if name.starts_with(".") {
         // Relative path (e.g., import "./utils")
-        let mut p = current_path
-            .parent()
-            .unwrap_or(current_path)
-            .join(name);
+        let mut p = current_path.parent().unwrap_or(current_path).join(name);
         if p.extension().is_none() {
             p.set_extension("rhai");
         }
@@ -38,7 +38,11 @@ fn resolve_inclusion_path(
         // Module/Role/Profile path
         let bp = base_path.ok_or_else(|| {
             Box::new(rhai::EvalAltResult::ErrorRuntime(
-                format!("Base path not set, cannot include '{}' ({:?})", name, inc_type).into(),
+                format!(
+                    "Base path not set, cannot include '{}' ({:?})",
+                    name, inc_type
+                )
+                .into(),
                 rhai::Position::NONE,
             ))
         })?;
@@ -66,13 +70,17 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
 
     let create_include_fn = |inc_type: InclusionType| {
         let m_path = m_path.clone();
-        move |ctx: NativeCallContext, name: String| -> std::result::Result<ModuleHandle, Box<rhai::EvalAltResult>> {
+        move |ctx: NativeCallContext,
+              name: String|
+              -> std::result::Result<ModuleHandle, Box<rhai::EvalAltResult>> {
             let exec_ctx = DslContext::get_exec_ctx();
 
             // Check constraints: Roles can only include Profiles
             {
-                let current_type = lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
-                if *current_type == Some(InclusionType::Role) && inc_type != InclusionType::Profile {
+                let current_type =
+                    lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
+                if *current_type == Some(InclusionType::Role) && inc_type != InclusionType::Profile
+                {
                     return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
                         "Roles can ONLY include profiles. Technical modules or other roles are not allowed.".into(),
                         rhai::Position::NONE,
@@ -103,7 +111,13 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
 
             if !full_path.exists() {
                 return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                    format!("{:?} {} not found at {}", inc_type, name, full_path.display()).into(),
+                    format!(
+                        "{:?} {} not found at {}",
+                        inc_type,
+                        name,
+                        full_path.display()
+                    )
+                    .into(),
                     rhai::Position::NONE,
                 )));
             }
@@ -119,8 +133,9 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
                 let mut resources = lock_or_err(&exec_ctx.resources, "resources")?;
                 let mut dependencies = Vec::new();
                 if let Ok(stack) = exec_ctx.module_stack.lock() {
-                    if let Some(parent) = stack.last() {
-                        dependencies.push(format!("ModuleStart[{}]", parent));
+                    if let Some((parent_type, parent_name)) = stack.last() {
+                        let dep = format!("{:?}Start[{}]", parent_type, parent_name);
+                        dependencies.push(dep);
                     }
                 }
                 resources.push(Resource::Meta(MetaResource {
@@ -133,12 +148,13 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             // Push module to stack
             {
                 let mut stack = lock_or_err(&exec_ctx.module_stack, "module_stack")?;
-                stack.push(name.clone());
+                stack.push((inc_type, name.clone()));
             }
 
             // Save and update inclusion context
             let old_inclusion_type = {
-                let mut current = lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
+                let mut current =
+                    lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
                 std::mem::replace(&mut *current, Some(inc_type))
             };
 
@@ -156,18 +172,21 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
                     facts_map.insert(k.into(), v.into());
                 }
                 scope.set_value("facts", facts_map);
-                
-                ctx.engine().eval_file_with_scope::<Dynamic>(&mut scope, full_path).map_err(|e| {
-                    Box::new(rhai::EvalAltResult::ErrorRuntime(
-                        format!("Failed to include {:?} '{}': {}", inc_type, name, e).into(),
-                        rhai::Position::NONE,
-                    ))
-                })
+
+                ctx.engine()
+                    .eval_file_with_scope::<Dynamic>(&mut scope, full_path)
+                    .map_err(|e| {
+                        Box::new(rhai::EvalAltResult::ErrorRuntime(
+                            format!("Failed to include {:?} '{}': {}", inc_type, name, e).into(),
+                            rhai::Position::NONE,
+                        ))
+                    })
             };
 
             // Restore inclusion context
             {
-                let mut current = lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
+                let mut current =
+                    lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
                 *current = old_inclusion_type;
             }
 
@@ -189,9 +208,14 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             // Add module end marker with all internal resources as dependencies
             {
                 let mut resources = lock_or_err(&exec_ctx.resources, "resources")?;
-                let mut end_deps = vec![handle.start_id.clone()];
-                for i in start_resource_count..resources.len() {
+                let mut end_deps = Vec::new();
+                // Start from start_resource_count + 1 to skip start marker itself (at start_resource_count)
+                for i in (start_resource_count + 1)..resources.len() {
                     end_deps.push(resources[i].id().to_string());
+                }
+                // If no internal resources, depend only on start marker
+                if end_deps.is_empty() {
+                    end_deps.push(handle.start_id.clone());
                 }
                 resources.push(Resource::Meta(MetaResource {
                     id: handle.end_id.clone(),
