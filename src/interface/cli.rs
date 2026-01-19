@@ -91,6 +91,10 @@ pub enum Commands {
         /// Maximum depth to display
         #[arg(long, default_value = "10")]
         max_depth: usize,
+
+        /// Output style (ascii, mermaid)
+        #[arg(short, long, default_value = "ascii")]
+        style: String,
     },
 }
 

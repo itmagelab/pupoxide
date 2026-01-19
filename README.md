@@ -15,6 +15,7 @@ Pupoxide is a high-performance, memory-safe, and declarative configuration manag
 - **Hexagonal Architecture**: Core logic isolated from system-specific implementation.
 - **Environment & Module Support**: Organize configuration in environments like `production` or `staging`.
 - **Idempotency**: Resources ensure the desired system state without redundant actions.
+- **Graph Visualization**: Built-in dependency graph visualization (ASCII and Mermaid).
 
 ## Installation
 
@@ -46,6 +47,85 @@ cargo run -- --config ./examples run --dry-run --file ./examples/environments/pr
 
 This will log actions as "Would ensure resource" instead of executing them.
 
+### Graph Visualization
+
+You can visualize the resource dependency graph for debugging or documentation. Support for ASCII tree (terminal) and Mermaid (documentation) is built-in.
+
+```bash
+# Default ASCII tree
+cargo run -- --config ./examples graph --file ./examples/environments/production/manifests/site.rhai
+
+# Mermaid syntax for documentation
+cargo run -- --config ./examples graph --file ./examples/environments/production/manifests/site.rhai --style mermaid
+```
+
+#### ASCII Example
+```text
+Dependency Graph:
+└─ Role: demo
+  └─ Profile: demo
+    └─ Module: common
+      └─ Module: brew
+        ├─ Exec[brew-install-htop]
+        ├─ Exec[brew-install-wget]
+      ├─ File[/tmp/.cacherc]
+      ├─ Directory[/tmp/pupoxide/examples/cache]
+      ├─ Exec[date > /tmp/pupoxide/examples/cache/timestamp]
+      │  └─→ Directory[/tmp/pupoxide/examples/cache]
+      ├─ File[/tmp/pupoxide/mac_only_config]
+    └─ Module: demo
+      └─ Module: ./utils
+      └─ Module: ./config
+        ├─ Directory[/tmp/demo]
+        ├─ File[/tmp/demo/.env]
+        │  └─→ Directory[/tmp/demo]
+      └─ Module: ./service
+        ├─ Exec[touch /tmp/demo/.demo.pid]
+      ├─ File[/tmp/demo/.banner]
+```
+
+#### Mermaid Example
+
+```mermaid
+graph TD
+  RoleStart_demo_{{Role: demo}}
+  ProfileStart_demo_[[Profile: demo]]
+  RoleStart_demo_ ==> ProfileStart_demo_
+  ModuleStart_common_("Module: common")
+  ProfileStart_demo_ ==> ModuleStart_common_
+  ModuleStart_brew_("Module: brew")
+  ModuleStart_common_ ==> ModuleStart_brew_
+  Exec_brew_install_htop_["Exec[brew-install-htop]"]
+  ModuleStart_brew_ ==> Exec_brew_install_htop_
+  Exec_brew_install_wget_["Exec[brew-install-wget]"]
+  ModuleStart_brew_ ==> Exec_brew_install_wget_
+  File__tmp__cacherc_["File[/tmp/.cacherc]"]
+  ModuleStart_common_ ==> File__tmp__cacherc_
+  Directory__tmp_pupoxide_examples_cache_["Directory[/tmp/pupoxide/examples/cache]"]
+  ModuleStart_common_ ==> Directory__tmp_pupoxide_examples_cache_
+  Exec_date____tmp_pupoxide_examples_cache_timestamp_["Exec[date > /tmp/pupoxide/examples/cache/timestamp]"]
+  ModuleStart_common_ ==> Exec_date____tmp_pupoxide_examples_cache_timestamp_
+  Exec_date____tmp_pupoxide_examples_cache_timestamp_ --> Directory__tmp_pupoxide_examples_cache_
+  File__tmp_pupoxide_mac_only_config_["File[/tmp/pupoxide/mac_only_config]"]
+  ModuleStart_common_ ==> File__tmp_pupoxide_mac_only_config_
+  ModuleStart_demo_("Module: demo")
+  ProfileStart_demo_ ==> ModuleStart_demo_
+  ModuleStart___utils_("Module: ./utils")
+  ModuleStart_demo_ ==> ModuleStart___utils_
+  ModuleStart___config_("Module: ./config")
+  ModuleStart_demo_ ==> ModuleStart___config_
+  Directory__tmp_demo_["Directory[/tmp/demo]"]
+  ModuleStart___config_ ==> Directory__tmp_demo_
+  File__tmp_demo__env_["File[/tmp/demo/.env]"]
+  ModuleStart___config_ ==> File__tmp_demo__env_
+  File__tmp_demo__env_ --> Directory__tmp_demo_
+  ModuleStart___service_("Module: ./service")
+  ModuleStart_demo_ ==> ModuleStart___service_
+  Exec_touch__tmp_demo__demo_pid_["Exec[touch /tmp/demo/.demo.pid]"]
+  ModuleStart___service_ ==> Exec_touch__tmp_demo__demo_pid_
+  File__tmp_demo__banner_["File[/tmp/demo/.banner]"]
+  ModuleStart_demo_ ==> File__tmp_demo__banner_
+```
 ### 1. Run a single manifest
 
 You can execute any `.rhai` script directly:

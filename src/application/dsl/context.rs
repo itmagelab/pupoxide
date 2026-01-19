@@ -76,17 +76,36 @@ impl DslContext {
             .unwrap_or(Ensure::Present)
     }
 
-    pub fn extract_dependencies(params: &Map, exec_ctx: &ExecutionContext) -> Vec<String> {
+    pub fn extract_dependencies(
+        params: &Map,
+        exec_ctx: &ExecutionContext,
+        source: Option<&str>,
+    ) -> Vec<String> {
         let mut dependencies = Vec::new();
 
-        // Get current module and inclusion type with safe locking
-        if let Some(stack_guard) = lock_or_warn(&exec_ctx.module_stack, "module_stack") {
+        // 1. Parent attribution based on Rhai source
+        if let Some(src) = source {
+            let s_map = exec_ctx
+                .source_map
+                .lock()
+                .expect("Failed to lock source map");
+
+            // Try specific source mapping, then fallback to current module stack
+            if let Some(marker_id) = s_map.get(src) {
+                dependencies.push(marker_id.clone());
+            } else if let Some(stack_guard) = lock_or_warn(&exec_ctx.module_stack, "module_stack") {
+                if let Some((inc_type, curr_mod)) = stack_guard.last() {
+                    dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
+                }
+            }
+        } else if let Some(stack_guard) = lock_or_warn(&exec_ctx.module_stack, "module_stack") {
+            // General fallback if no source provided
             if let Some((inc_type, curr_mod)) = stack_guard.last() {
                 dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
             }
         }
 
-        // Add explicit dependencies from params
+        // 2. Add explicit dependencies from params
         if let Some(req) = params.get("require") {
             Self::push_dependency(&mut dependencies, req.clone());
         }

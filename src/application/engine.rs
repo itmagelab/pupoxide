@@ -30,6 +30,8 @@ pub struct ExecutionContext {
     pub current_inclusion_type: Arc<Mutex<Option<InclusionType>>>,
     pub facts: Arc<Facts>,
     pub current_path: Arc<Mutex<PathBuf>>,
+    /// Maps Rhai source name to the corresponding ModuleStart ID
+    pub source_map: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl ExecutionContext {
@@ -41,6 +43,7 @@ impl ExecutionContext {
             current_inclusion_type: Arc::new(Mutex::new(None)),
             facts: Arc::new(facts),
             current_path: Arc::new(Mutex::new(path)),
+            source_map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -198,13 +201,30 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
         let start_resource_count = {
             let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
             let count = resources.len();
+
+            let mut dependencies = Vec::new();
+            if let Ok(stack) = exec_ctx.module_stack.lock() {
+                if let Some((parent_type, parent_name)) = stack.last() {
+                    dependencies.push(format!("{:?}Start[{}]", parent_type, parent_name));
+                }
+            }
+
             resources.push(Resource::Meta(crate::domain::resource::MetaResource {
                 id: handle.start_id.clone(),
                 kind: crate::domain::resource::MetaKind::ModuleStart,
-                dependencies: Vec::new(),
+                dependencies,
             }));
             count
         };
+
+        // Track source to marker mapping
+        {
+            let mut s_map = exec_ctx
+                .source_map
+                .lock()
+                .expect("Failed to lock source map");
+            s_map.insert(module_name.clone(), handle.start_id.clone());
+        }
 
         // 3. Prepare environment for module execution
         exec_ctx
@@ -317,6 +337,18 @@ impl PupoxideEngine {
         facts: Facts,
     ) -> Result<Catalog> {
         let exec_ctx = ExecutionContext::new(facts.clone(), path.clone());
+
+        // Root manifest source mapping
+        {
+            let mut s_map = exec_ctx
+                .source_map
+                .lock()
+                .expect("Failed to lock source map");
+            // Common root names in Rhai
+            s_map.insert("".to_string(), "Root".to_string());
+            s_map.insert("site".to_string(), "Root".to_string());
+        }
+
         let mut scope = Scope::new();
 
         // Inject facts into scope
@@ -340,14 +372,19 @@ impl PupoxideEngine {
 
         let _ = eval_res.map_err(|e| anyhow::anyhow!("Rhai execution error: {}", e))?;
 
-        let resources = exec_ctx
+        let evaluation_order = exec_ctx
             .resources
             .lock()
             .expect("Failed to lock resources")
             .clone();
-        let sorted_resources = self.sort_resources(resources)?;
+        let sorted_resources = self.sort_resources(evaluation_order.clone())?;
 
-        Ok(Catalog::new(node_name, environment, sorted_resources))
+        Ok(Catalog::new(
+            node_name,
+            environment,
+            sorted_resources,
+            evaluation_order,
+        ))
     }
 
     pub fn run_manifest_with_modules(

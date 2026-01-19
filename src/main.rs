@@ -253,6 +253,7 @@ async fn main() -> Result<()> {
             module_path,
             filter,
             max_depth,
+            style,
         } => {
             let engine = PupoxideEngine::new(None);
 
@@ -278,7 +279,17 @@ async fn main() -> Result<()> {
             let catalog =
                 engine.run_manifest(file, "localhost".to_string(), "local".to_string(), facts)?;
 
-            pupoxide::interface::graph::display_graph(&catalog, filter.as_deref(), max_depth)?;
+            let style = match style.as_str() {
+                "mermaid" => pupoxide::interface::graph::GraphStyle::Mermaid,
+                _ => pupoxide::interface::graph::GraphStyle::Ascii,
+            };
+
+            pupoxide::interface::graph::display_graph(
+                &catalog,
+                filter.as_deref(),
+                max_depth,
+                style,
+            )?;
         }
     }
 
