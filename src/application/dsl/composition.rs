@@ -24,8 +24,8 @@ fn lock_or_err<'a, T>(
 fn resolve_inclusion_path(
     inc_type: InclusionType,
     name: &str,
-    current_path: &PathBuf,
-    base_path: Option<&PathBuf>,
+    current_path: &std::path::Path,
+    base_path: Option<&std::path::Path>,
 ) -> std::result::Result<PathBuf, Box<rhai::EvalAltResult>> {
     let full_path = if name.starts_with(".") {
         // Relative path (e.g., import "./utils")
@@ -105,7 +105,12 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             // Get current path and base path for resolution
             let current_p = lock_or_err(&exec_ctx.current_path, "current_path")?;
             let base = lock_or_err(&m_path, "module_path")?;
-            let full_path = resolve_inclusion_path(inc_type, &name, &*current_p, base.as_ref())?;
+            let full_path = resolve_inclusion_path(
+                inc_type,
+                &name,
+                &current_p,
+                base.as_ref().map(|p| p.as_path()),
+            )?;
             drop(current_p);
             drop(base);
 
@@ -132,11 +137,11 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             {
                 let mut resources = lock_or_err(&exec_ctx.resources, "resources")?;
                 let mut dependencies = Vec::new();
-                if let Ok(stack) = exec_ctx.module_stack.lock() {
-                    if let Some((parent_type, parent_name)) = stack.last() {
-                        let dep = format!("{:?}Start[{}]", parent_type, parent_name);
-                        dependencies.push(dep);
-                    }
+                if let Ok(stack) = exec_ctx.module_stack.lock()
+                    && let Some((parent_type, parent_name)) = stack.last()
+                {
+                    let dep = format!("{:?}Start[{}]", parent_type, parent_name);
+                    dependencies.push(dep);
                 }
                 resources.push(Resource::Meta(MetaResource {
                     id: handle.start_id.clone(),
@@ -155,7 +160,7 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             let old_inclusion_type = {
                 let mut current =
                     lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
-                std::mem::replace(&mut *current, Some(inc_type))
+                (*current).replace(inc_type)
             };
 
             // Save and update current path

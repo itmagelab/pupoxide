@@ -1,5 +1,5 @@
-use crate::domain::bootstrap::{BootstrapRequest, RegisteredAgent, BootstrapRequestMetadata};
-use anyhow::{anyhow, Result};
+use crate::domain::bootstrap::{BootstrapRequest, BootstrapRequestMetadata, RegisteredAgent};
+use anyhow::{Result, anyhow};
 use chrono::Utc;
 use std::path::PathBuf;
 use tokio::fs;
@@ -45,7 +45,7 @@ impl BootstrapRequestManager {
     /// Get a bootstrap request by node_id
     pub async fn get_request(&self, node_id: &str) -> Result<BootstrapRequest> {
         let request_path = self.requests_dir.join(format!("{}.json", node_id));
-        
+
         let content = fs::read_to_string(&request_path)
             .await
             .map_err(|_| anyhow!("Request {} not found", node_id))?;
@@ -67,18 +67,16 @@ impl BootstrapRequestManager {
 
         while let Some(entry) = entries.next_entry().await.map_err(|e| anyhow!("{}", e))? {
             let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
-                if let Ok(content) = fs::read_to_string(&path).await {
-                    if let Ok(req) = serde_json::from_str::<BootstrapRequest>(&content) {
-                        if req.is_pending() {
-                            requests.push(BootstrapRequestMetadata {
-                                node_id: req.node_id,
-                                status: req.status,
-                                requested_at: req.requested_at,
-                            });
-                        }
-                    }
-                }
+            if path.extension().and_then(|ext| ext.to_str()) == Some("json")
+                && let Ok(content) = fs::read_to_string(&path).await
+                && let Ok(req) = serde_json::from_str::<BootstrapRequest>(&content)
+                && req.is_pending()
+            {
+                requests.push(BootstrapRequestMetadata {
+                    node_id: req.node_id,
+                    status: req.status,
+                    requested_at: req.requested_at,
+                });
             }
         }
 
@@ -94,9 +92,13 @@ impl BootstrapRequestManager {
             .map_err(|_| anyhow!("Request {} not found", node_id))?;
 
         let mut request: BootstrapRequest = serde_json::from_str(&content)?;
-        
+
         if !request.is_pending() {
-            return Err(anyhow!("Request {} is not pending (status: {})", node_id, request.status));
+            return Err(anyhow!(
+                "Request {} is not pending (status: {})",
+                node_id,
+                request.status
+            ));
         }
 
         request.approve();
@@ -180,7 +182,7 @@ impl AgentRegistryFs {
     /// Check if agent is registered and active
     pub async fn is_registered(&self, node_id: &str) -> Result<bool> {
         let metadata_path = self.agents_dir.join(format!("{}.json", node_id));
-        
+
         match fs::read_to_string(&metadata_path).await {
             Ok(content) => {
                 if let Ok(agent) = serde_json::from_str::<RegisteredAgent>(&content) {
@@ -251,8 +253,8 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_create_request() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
+    async fn test_create_request() -> Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
         let manager = BootstrapRequestManager::new(temp_dir.path().to_path_buf());
 
         let req = manager
@@ -262,11 +264,12 @@ mod tests {
 
         assert_eq!(req.node_id, "agent-01");
         assert!(req.is_pending());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_approve_request() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
+    async fn test_approve_request() -> Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
         let manager = BootstrapRequestManager::new(temp_dir.path().to_path_buf());
 
         manager
@@ -280,11 +283,12 @@ mod tests {
             .expect("Failed to approve");
 
         assert!(approved.is_approved());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_register_agent() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
+    async fn test_register_agent() -> Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
         let registry = AgentRegistryFs::new(temp_dir.path().to_path_buf());
 
         registry
@@ -298,5 +302,6 @@ mod tests {
             .expect("Failed to check");
 
         assert!(is_registered);
+        Ok(())
     }
 }

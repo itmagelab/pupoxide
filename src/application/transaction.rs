@@ -39,7 +39,7 @@ pub async fn execute_transaction(
         if let Err(e) = provider.apply(resource).await {
             tracing::error!(id = %resource.id(), error = %e, "Failed to apply resource");
             state_store.save_transaction(&transaction)?;
-            return Err(e.into());
+            return Err(e);
         }
     }
 

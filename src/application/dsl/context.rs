@@ -24,6 +24,8 @@ impl DslContext {
         CURRENT_EXEC_CTX.with(|ctx| {
             ctx.borrow()
                 .clone()
+                // SAFETY: Execution context must be set during Rhai evaluation.
+                // This is ensured by the engine's run_manifest method.
                 .expect("Execution context must be set during Rhai evaluation")
         })
     }
@@ -54,10 +56,10 @@ impl DslContext {
 
     pub fn add_dependency_between_ids(lhs_id: &str, rhs_id: &str) {
         let exec_ctx = Self::get_exec_ctx();
-        if let Some(mut resources) = lock_or_warn(&exec_ctx.resources, "resources") {
-            if let Some(res) = resources.iter_mut().find(|r| r.id() == rhs_id) {
-                res.add_dependency(lhs_id.to_string());
-            }
+        if let Some(mut resources) = lock_or_warn(&exec_ctx.resources, "resources")
+            && let Some(res) = resources.iter_mut().find(|r| r.id() == rhs_id)
+        {
+            res.add_dependency(lhs_id.to_string());
         }
     }
 
@@ -88,15 +90,16 @@ impl DslContext {
             let s_map = exec_ctx
                 .source_map
                 .lock()
+                // SAFETY: Lock failure indicates a poisoned mutex, which is a fatal error.
                 .expect("Failed to lock source map");
 
             // Try specific source mapping, then fallback to current module stack
             if let Some(marker_id) = s_map.get(src) {
                 dependencies.push(marker_id.clone());
-            } else if let Some(stack_guard) = lock_or_warn(&exec_ctx.module_stack, "module_stack") {
-                if let Some((inc_type, curr_mod)) = stack_guard.last() {
-                    dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
-                }
+            } else if let Some(stack_guard) = lock_or_warn(&exec_ctx.module_stack, "module_stack")
+                && let Some((inc_type, curr_mod)) = stack_guard.last()
+            {
+                dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
             }
         } else if let Some(stack_guard) = lock_or_warn(&exec_ctx.module_stack, "module_stack") {
             // General fallback if no source provided

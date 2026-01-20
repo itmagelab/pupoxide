@@ -2,9 +2,9 @@ use crate::domain::error::Result;
 use crate::domain::resource::{Ensure, FileResource, Resource, ResourceProvider, ResourceState};
 use async_trait::async_trait;
 use nix::unistd::{Group, User, chown};
-use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use tokio::fs;
+use tokio::io::AsyncWriteExt;
 
 pub struct FsAdapter;
 
@@ -20,7 +20,7 @@ impl ResourceProvider for FsAdapter {
                 let physical_exists = file.path.exists() && !file.path.is_dir();
 
                 if full && physical_exists {
-                    let content = fs::read(&file.path).ok();
+                    let content = fs::read(&file.path).await.ok();
                     Ok(ResourceState::Full {
                         ensure: Ensure::Present,
                         content,
@@ -60,14 +60,15 @@ impl FsAdapter {
     ) -> Result<()> {
         if dir.ensure == Ensure::Present {
             if !dir.path.exists() {
-                fs::create_dir_all(&dir.path).map_err(|e| {
-                    anyhow::anyhow!("Failed to create directory: {}", e)
-                })?;
+                fs::create_dir_all(&dir.path)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to create directory: {}", e))?;
             }
             self.apply_metadata(&dir.path, &dir.owner, &dir.group, &dir.mode)
                 .await?;
         } else if dir.path.exists() {
             fs::remove_dir_all(&dir.path)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to remove directory: {}", e))?;
         }
         Ok(())
@@ -82,14 +83,15 @@ impl FsAdapter {
     ) -> Result<()> {
         // Mode
         if let Some(mode_str) = mode {
-            let mode_val = u32::from_str_radix(mode_str, 8).map_err(|e| {
-                anyhow::anyhow!("Invalid mode octal string '{}': {}", mode_str, e)
-            })?;
+            let mode_val = u32::from_str_radix(mode_str, 8)
+                .map_err(|e| anyhow::anyhow!("Invalid mode octal string '{}': {}", mode_str, e))?;
             let mut perms = fs::metadata(path)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to get metadata: {}", e))?
                 .permissions();
             perms.set_mode(mode_val);
             fs::set_permissions(path, perms)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to set permissions: {}", e))?;
         }
 
@@ -98,8 +100,7 @@ impl FsAdapter {
         let gid = Self::resolve_group(group).await?;
 
         if uid.is_some() || gid.is_some() {
-            chown(path, uid, gid)
-                .map_err(|e| anyhow::anyhow!("Failed to chown: {}", e))?;
+            chown(path, uid, gid).map_err(|e| anyhow::anyhow!("Failed to chown: {}", e))?;
         }
 
         Ok(())
@@ -108,9 +109,7 @@ impl FsAdapter {
     async fn resolve_user(owner: &Option<String>) -> Result<Option<nix::unistd::Uid>> {
         if let Some(owner_name) = owner {
             let user = User::from_name(owner_name)
-                .map_err(|e| {
-                    anyhow::anyhow!("Failed to resolve user '{}': {}", owner_name, e)
-                })?
+                .map_err(|e| anyhow::anyhow!("Failed to resolve user '{}': {}", owner_name, e))?
                 .ok_or_else(|| anyhow::anyhow!("User '{}' not found", owner_name))?;
             Ok(Some(user.uid))
         } else {
@@ -121,15 +120,8 @@ impl FsAdapter {
     async fn resolve_group(group: &Option<String>) -> Result<Option<nix::unistd::Gid>> {
         if let Some(group_name) = group {
             let grp = Group::from_name(group_name)
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to resolve group '{}': {}",
-                        group_name, e
-                    )
-                })?
-                .ok_or_else(|| {
-                    anyhow::anyhow!("Group '{}' not found", group_name)
-                })?;
+                .map_err(|e| anyhow::anyhow!("Failed to resolve group '{}': {}", group_name, e))?
+                .ok_or_else(|| anyhow::anyhow!("Group '{}' not found", group_name))?;
             Ok(Some(grp.gid))
         } else {
             Ok(None)
@@ -147,6 +139,7 @@ impl FsAdapter {
 
         if let Some(expected_content) = &file.content {
             let actual_content = fs::read_to_string(&file.path)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to read file: {}", e))?;
 
             if &actual_content != expected_content {
@@ -164,18 +157,24 @@ impl FsAdapter {
                 if let Some(parent) = file.path.parent()
                     && !parent.exists()
                 {
-                    fs::create_dir_all(parent).map_err(|e| {
-                        anyhow::anyhow!("Failed to create parent directory: {}", e)
-                    })?;
+                    fs::create_dir_all(parent)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to create parent directory: {}", e))?;
                 }
 
-                let mut f = fs::File::create(&file.path)
-                    .map_err(|e| anyhow::anyhow!("Failed to create file: {}", e))?;
+                {
+                    let mut f = fs::File::create(&file.path)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to create file: {}", e))?;
 
-                if let Some(content) = &file.content {
-                    f.write_all(content.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("Failed to write file: {}", e)
-                    })?;
+                    if let Some(content) = &file.content {
+                        f.write_all(content.as_bytes())
+                            .await
+                            .map_err(|e| anyhow::anyhow!("Failed to write file: {}", e))?;
+                    }
+                    f.flush()
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to flush file: {}", e))?;
                 }
 
                 // Set permissions and ownership
@@ -186,9 +185,9 @@ impl FsAdapter {
             }
             Ensure::Absent => {
                 if file.path.exists() {
-                    fs::remove_file(&file.path).map_err(|e| {
-                        anyhow::anyhow!("Failed to remove file: {}", e)
-                    })?;
+                    fs::remove_file(&file.path)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to remove file: {}", e))?;
                     tracing::info!(path = %file.path.display(), "File ensured absent");
                 }
             }

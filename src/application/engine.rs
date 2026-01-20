@@ -203,10 +203,10 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
             let count = resources.len();
 
             let mut dependencies = Vec::new();
-            if let Ok(stack) = exec_ctx.module_stack.lock() {
-                if let Some((parent_type, parent_name)) = stack.last() {
-                    dependencies.push(format!("{:?}Start[{}]", parent_type, parent_name));
-                }
+            if let Ok(stack) = exec_ctx.module_stack.lock()
+                && let Some((parent_type, parent_name)) = stack.last()
+            {
+                dependencies.push(format!("{:?}Start[{}]", parent_type, parent_name));
             }
 
             resources.push(Resource::Meta(crate::domain::resource::MetaResource {

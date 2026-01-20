@@ -11,6 +11,7 @@ fn get_module_handle(module: &rhai::Shared<rhai::Module>) -> Option<ModuleHandle
 }
 
 pub fn register(engine: &mut Engine) {
+    // SAFETY: Registered at startup, failure should never happen with valid name.
     engine
         .register_custom_operator("->", 60)
         .expect("Failed to register custom operator");
