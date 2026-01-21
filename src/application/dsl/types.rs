@@ -1,6 +1,6 @@
-use rhai::Engine;
-use crate::domain::resource::{Ensure, Resource};
 use crate::application::engine::ModuleHandle;
+use crate::domain::resource::{Ensure, Resource};
+use rhai::Engine;
 
 pub fn register(engine: &mut Engine) {
     engine.register_type_with_name::<Resource>("Resource");

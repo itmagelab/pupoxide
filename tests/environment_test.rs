@@ -111,7 +111,10 @@ async fn test_module_inclusion() {
     }
 
     assert!(target_file.exists());
-    assert_eq!(fs::read_to_string(&target_file).expect("Test invariant failed"), "from module");
+    assert_eq!(
+        fs::read_to_string(&target_file).expect("Test invariant failed"),
+        "from module"
+    );
 }
 
 #[tokio::test]
@@ -162,12 +165,14 @@ async fn test_module_dependency_chain() {
     // Create Module A
     let mod_a_dir = modules_dir.join("mod_a").join("manifests");
     fs::create_dir_all(&mod_a_dir).expect("Test invariant failed");
-    fs::write(mod_a_dir.join("init.rhai"), r#"file("/tmp/a", #{})"#).expect("Test invariant failed");
+    fs::write(mod_a_dir.join("init.rhai"), r#"file("/tmp/a", #{})"#)
+        .expect("Test invariant failed");
 
     // Create Module B
     let mod_b_dir = modules_dir.join("mod_b").join("manifests");
     fs::create_dir_all(&mod_b_dir).expect("Test invariant failed");
-    fs::write(mod_b_dir.join("init.rhai"), r#"file("/tmp/b", #{})"#).expect("Test invariant failed");
+    fs::write(mod_b_dir.join("init.rhai"), r#"file("/tmp/b", #{})"#)
+        .expect("Test invariant failed");
 
     // Site manifest with dependency: A must complete before B starts
     let site_script = r#"include("mod_a") -> include("mod_b");"#;

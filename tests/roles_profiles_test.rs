@@ -6,7 +6,7 @@ use tempfile::tempdir;
 async fn test_roles_and_profiles() {
     let base_dir = tempdir().expect("Test invariant failed");
     let env_dir = base_dir.path().join("environments").join("prod");
-    
+
     let manifests_dir = env_dir.join("manifests");
     let role_dir = env_dir.join("role");
     let profile_dir = env_dir.join("profile");
@@ -21,7 +21,8 @@ async fn test_roles_and_profiles() {
     fs::write(
         profile_dir.join("common.rhai"),
         r#"file("/tmp/profile_common", #{});"#,
-    ).expect("Test invariant failed");
+    )
+    .expect("Test invariant failed");
 
     // 2. Create a Role that includes the Profile
     fs::write(
@@ -29,7 +30,8 @@ async fn test_roles_and_profiles() {
         r#"
         "common".profile;
         "#,
-    ).expect("Test invariant failed");
+    )
+    .expect("Test invariant failed");
 
     // 3. Site manifest uses the Role
     let site_script = r#"
@@ -52,7 +54,7 @@ async fn test_roles_and_profiles() {
         .expect("Test invariant failed");
 
     let ids: Vec<_> = catalog.resources.iter().map(|r| r.id()).collect();
-    
+
     // Check presence
     assert!(ids.contains(&"File[/tmp/profile_common]"));
     assert!(ids.contains(&"File[/tmp/profile_common]"));

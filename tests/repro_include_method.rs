@@ -29,5 +29,10 @@ async fn test_string_method_include() {
         )
         .expect("Test invariant failed");
 
-    assert!(catalog.resources.iter().any(|r| r.id() == "File[/tmp/sub_method]"));
+    assert!(
+        catalog
+            .resources
+            .iter()
+            .any(|r| r.id() == "File[/tmp/sub_method]")
+    );
 }

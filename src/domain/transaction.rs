@@ -10,7 +10,6 @@ pub struct Transaction {
     pub original_catalog: Catalog,
     /// Maps resource ID to its original state before application
     pub original_states: HashMap<String, crate::domain::resource::ResourceState>,
-
 }
 
 impl Transaction {

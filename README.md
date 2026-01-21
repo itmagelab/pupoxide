@@ -13,6 +13,7 @@ Pupoxide is a high-performance, memory-safe, and declarative configuration manag
 
 - **Declarative DSL**: Use [Rhai](https://rhai.rs/) scripts for clear, modular manifests.
 - **Hexagonal Architecture**: Core logic isolated from system-specific implementation.
+- **Parallel Execution**: Automatically evaluates independent resources in parallel for maximum performance.
 - **Environment & Module Support**: Organize configuration in environments like `production` or `staging`.
 - **Idempotency**: Resources ensure the desired system state without redundant actions.
 - **Graph Visualization**: Built-in dependency graph visualization (ASCII and Mermaid).
@@ -143,6 +144,27 @@ Apply all manifests from a specific environment using the Puppet-like directory 
 # Default config path is /etc/pupoxide
 cargo run -- --config ./examples apply --environment production
 ```
+
+#### Parallel Execution Example
+Pupoxide automatically detects independent parts of your configuration and applies them concurrently:
+
+```text
+Configuring Pupoxide Example on port 7070
+Default package manager: brew (from 15.6.1 level)
+
+Catalog Application Summary:
+------------------------------------------------------------
+[demo::demo::demo::config] Directory[/tmp/demo] ................ [UNCHANGED] (0ms)
+[demo::demo::common] Directory[/tmp/pupoxide/examples/cache] ... [UNCHANGED] (0ms)
+[demo::demo::demo] File[/tmp/.cacherc] ......................... [UNCHANGED] (1ms)
+[demo::demo::common] File[/tmp/app_config.txt] ................. [UNCHANGED] (2ms)
+[demo::demo::common] Exec[brew-install-htop] ................... [UNCHANGED] (380ms)
+[demo::demo::common] Exec[brew-install-wget] ................... [UNCHANGED] (380ms)
+[demo::demo::common] Exec[/bin/sleep 2] ........................ [SUCCESS] (2.01s)
+------------------------------------------------------------
+Summary: 1 applied, 11 unchanged, 0 failed (Total: 2.02s)
+```
+*(Note: brew commands and sleep are independent and were evaluated in parallel)*
 
 ### 3. Client-Server Mode
 

@@ -35,12 +35,7 @@ impl ProviderRegistry {
         self.providers
             .iter()
             .find(|p| p.can_handle(resource))
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No provider found for resource: {}",
-                    resource.id()
-                )
-            })
+            .ok_or_else(|| anyhow::anyhow!("No provider found for resource: {}", resource.id()))
     }
 }
 

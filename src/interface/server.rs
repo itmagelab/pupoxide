@@ -3,14 +3,14 @@ use crate::application::loader::EnvironmentLoader;
 use crate::domain::bootstrap::{BootstrapRequest, BootstrapResponse};
 use crate::domain::catalog::Catalog;
 use crate::domain::facts::Facts;
-use crate::infrastructure::{BootstrapRequestManager, AgentRegistryFs};
 use crate::infrastructure::certificate::CertificateAuthority;
+use crate::infrastructure::{AgentRegistryFs, BootstrapRequestManager};
 use axum::{
+    Json, Router,
     extract::ConnectInfo,
+    extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json, Router,
-    extract::{Path, State},
     routing::post,
 };
 use std::net::SocketAddr;
@@ -93,7 +93,10 @@ async fn check_bootstrap(
         .get_request(node_id)
         .await
         .map_err(|_| {
-            ServerError(StatusCode::NOT_FOUND, format!("No request found for {}", node_id))
+            ServerError(
+                StatusCode::NOT_FOUND,
+                format!("No request found for {}", node_id),
+            )
         })?;
 
     match request.status.as_str() {
@@ -105,13 +108,13 @@ async fn check_bootstrap(
         })),
         "approved" => {
             // Sign certificate
-            let signed_cert = state
-                .ca
-                .sign_csr(node_id, 365)
-                .map_err(|e| {
-                    error!(error = %e, "Certificate signing failed");
-                    ServerError(StatusCode::INTERNAL_SERVER_ERROR, "Failed to sign certificate".into())
-                })?;
+            let signed_cert = state.ca.sign_csr(node_id, 365).map_err(|e| {
+                error!(error = %e, "Certificate signing failed");
+                ServerError(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to sign certificate".into(),
+                )
+            })?;
 
             // Register agent
             state
@@ -120,7 +123,10 @@ async fn check_bootstrap(
                 .await
                 .map_err(|e| {
                     error!(error = %e, "Agent registration failed");
-                    ServerError(StatusCode::INTERNAL_SERVER_ERROR, "Failed to register agent".into())
+                    ServerError(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to register agent".into(),
+                    )
                 })?;
 
             info!(node_id = node_id, "Agent approved and certificate signed");
@@ -164,7 +170,10 @@ async fn get_catalog(
             ServerError(StatusCode::INTERNAL_SERVER_ERROR, "Database error".into())
         })?
         .then_some(())
-        .ok_or(ServerError(StatusCode::FORBIDDEN, format!("Agent {} not registered", node)))?;
+        .ok_or(ServerError(
+            StatusCode::FORBIDDEN,
+            format!("Agent {} not registered", node),
+        ))?;
 
     // Update last seen
     state
@@ -187,7 +196,13 @@ async fn get_catalog(
     // 2. Compile catalog
     let catalog = state
         .engine
-        .run_manifest_with_modules(manifest_path, modules_path, node.clone(), env.clone(), facts)
+        .run_manifest_with_modules(
+            manifest_path,
+            modules_path,
+            node.clone(),
+            env.clone(),
+            facts,
+        )
         .map_err(|e| {
             error!(error = %e, node = %node, env = %env, "Catalog compilation failed");
             ServerError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
