@@ -34,3 +34,5 @@ if facts["os_family"] == "Darwin" {
 } else {
     print("Not on macOS, skipping specific config. OS: " + facts["os_family"]);
 }
+
+exec("/bin/sleep 2", #{ })

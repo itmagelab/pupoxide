@@ -181,14 +181,14 @@ impl FsAdapter {
                 self.apply_metadata(&file.path, &file.owner, &file.group, &file.mode)
                     .await?;
 
-                tracing::info!(path = %file.path.display(), "File ensured present");
+                tracing::debug!(path = %file.path.display(), "File ensured present");
             }
             Ensure::Absent => {
                 if file.path.exists() {
                     fs::remove_file(&file.path)
                         .await
                         .map_err(|e| anyhow::anyhow!("Failed to remove file: {}", e))?;
-                    tracing::info!(path = %file.path.display(), "File ensured absent");
+                    tracing::debug!(path = %file.path.display(), "File ensured absent");
                 }
             }
         }

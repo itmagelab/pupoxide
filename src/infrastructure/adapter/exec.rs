@@ -56,9 +56,7 @@ impl ExecAdapter {
                 .arg(unless_cmd)
                 .status()
                 .await
-                .map_err(|e| {
-                    anyhow::anyhow!("Failed to execute unless command: {}", e)
-                })?;
+                .map_err(|e| anyhow::anyhow!("Failed to execute unless command: {}", e))?;
 
             if status.success() {
                 tracing::debug!(
@@ -96,9 +94,10 @@ impl ExecAdapter {
         }
 
         // Execute command
-        let output = cmd.output().await.map_err(|e| {
-            anyhow::anyhow!("Failed to execute command '{}': {}", exec.command, e)
-        })?;
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to execute command '{}': {}", exec.command, e))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -110,7 +109,7 @@ impl ExecAdapter {
             ));
         }
 
-        tracing::info!(
+        tracing::debug!(
             command = %exec.command,
             exit_code = ?output.status.code(),
             "Command executed successfully"
