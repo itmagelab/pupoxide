@@ -69,19 +69,24 @@ pub async fn execute_transaction(
                 .expect("Resource must exist");
 
             // If any dependency failed, this resource is skipped
-            let mut dependency_failed = false;
-            for dep in resource.dependencies() {
-                if failed_roots.contains(dep) {
-                    dependency_failed = true;
-                    break;
-                }
-            }
+            let failed_deps: Vec<_> = resource
+                .dependencies()
+                .iter()
+                .filter(|d| failed_roots.contains(*d))
+                .cloned()
+                .collect();
 
-            if dependency_failed {
+            if !failed_deps.is_empty() {
                 failed_roots.insert(res_id.clone());
                 let source_context = get_source_context(&resource);
+                let msg = if failed_deps.len() == 1 {
+                    format!("Dependency failed: {}", failed_deps[0])
+                } else {
+                    format!("Dependencies failed: {}", failed_deps.join(", "))
+                };
+
                 let report = ResourceReport::new(res_id.clone(), ResourceStatus::Skipped, false)
-                    .with_message("Dependency failed".to_string())
+                    .with_message(msg)
                     .with_source_context(source_context);
 
                 reports.insert(res_id.clone(), report.clone());
@@ -150,12 +155,19 @@ pub async fn execute_transaction(
             let source_context = get_source_context(resource);
 
             // Check if it was supposed to be skipped due to a failed parent
-            let parent_failed = resource
+            let failed_deps: Vec<_> = resource
                 .dependencies()
                 .iter()
-                .any(|d| failed_roots.contains(d));
-            let msg = if parent_failed {
-                "Dependency failed".to_string()
+                .filter(|d| failed_roots.contains(*d))
+                .cloned()
+                .collect();
+
+            let msg = if !failed_deps.is_empty() {
+                if failed_deps.len() == 1 {
+                    format!("Dependency failed: {}", failed_deps[0])
+                } else {
+                    format!("Dependencies failed: {}", failed_deps.join(", "))
+                }
             } else {
                 "Dependency cycle or unhandled state".to_string()
             };
