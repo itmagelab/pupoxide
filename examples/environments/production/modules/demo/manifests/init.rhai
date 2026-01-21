@@ -8,3 +8,8 @@ file("/tmp/demo/.banner", #{
     ensure: "present",
     content: u::get_banner("Pupoxide Demo")
 });
+
+file("/tmp/.cacherc", #{
+    ensure: "present",
+    content: "Global settings"
+});

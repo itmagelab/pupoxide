@@ -44,6 +44,7 @@ pub fn register(engine: &mut Engine) {
                 owner: DslContext::extract_string(&params, "owner"),
                 group: DslContext::extract_string(&params, "group"),
                 mode: DslContext::extract_string(&params, "mode"),
+                source_context: exec_ctx.get_source_context(),
             });
 
             DslContext::add_resource(&exec_ctx, resource).map_err(to_rhai_error)
@@ -75,6 +76,7 @@ pub fn register(engine: &mut Engine) {
                 cwd,
                 environment: extract_environment(&params),
                 dependencies,
+                source_context: exec_ctx.get_source_context(),
             });
 
             DslContext::add_resource(&exec_ctx, resource).map_err(to_rhai_error)
@@ -103,6 +105,7 @@ pub fn register(engine: &mut Engine) {
                 owner: DslContext::extract_string(&params, "owner"),
                 group: DslContext::extract_string(&params, "group"),
                 mode: DslContext::extract_string(&params, "mode"),
+                source_context: exec_ctx.get_source_context(),
             });
 
             DslContext::add_resource(&exec_ctx, resource).map_err(to_rhai_error)

@@ -1,3 +1,4 @@
+use crate::domain::resource::SourceContext;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -17,6 +18,7 @@ pub struct ResourceReport {
     pub message: Option<String>,
     pub changed: bool,
     pub duration: std::time::Duration,
+    pub source_context: Option<SourceContext>,
 }
 
 impl ResourceReport {
@@ -27,7 +29,13 @@ impl ResourceReport {
             message: None,
             changed,
             duration: std::time::Duration::from_secs(0),
+            source_context: None,
         }
+    }
+
+    pub fn with_source_context(mut self, source_context: Option<SourceContext>) -> Self {
+        self.source_context = source_context;
+        self
     }
 
     pub fn with_duration(mut self, duration: std::time::Duration) -> Self {

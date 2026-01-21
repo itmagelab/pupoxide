@@ -32,7 +32,7 @@ pub async fn handle_run(
     let catalog = engine.run_manifest(file, "localhost".to_string(), "local".to_string(), facts)?;
 
     crate::interface::formatter::PrettyFormatter::print_header();
-    let reports = execute_transaction(catalog, &state_store, provider, dry_run, |report| {
+    let _reports = execute_transaction(catalog, &state_store, provider, dry_run, |report| {
         if show_unchanged || report.status != crate::domain::report::ResourceStatus::Unchanged {
             println!(
                 "{}",
@@ -41,8 +41,6 @@ pub async fn handle_run(
         }
     })
     .await?;
-
-    crate::interface::formatter::PrettyFormatter::print_summary(&reports);
 
     Ok(())
 }
@@ -87,7 +85,7 @@ pub async fn handle_apply(
     )?;
 
     crate::interface::formatter::PrettyFormatter::print_header();
-    let reports = execute_transaction(catalog, &state_store, provider, dry_run, |report| {
+    let _reports = execute_transaction(catalog, &state_store, provider, dry_run, |report| {
         if show_unchanged || report.status != crate::domain::report::ResourceStatus::Unchanged {
             println!(
                 "{}",
@@ -96,8 +94,6 @@ pub async fn handle_apply(
         }
     })
     .await?;
-
-    crate::interface::formatter::PrettyFormatter::print_summary(&reports);
 
     Ok(())
 }

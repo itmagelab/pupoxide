@@ -10,8 +10,8 @@ async fn test_exec_creates_idempotency() {
     let output_path = output_file.to_str().unwrap();
 
     // Create ExecResource manually since we don't have a macro yet
-    let resource = pupoxide::domain::resource::Resource::Exec(
-        pupoxide::domain::resource::ExecResource {
+    let resource =
+        pupoxide::domain::resource::Resource::Exec(pupoxide::domain::resource::ExecResource {
             id: format!("Exec[echo test > {}]", output_path),
             command: format!("echo 'test content' > {}", output_path),
             creates: Some(output_file.clone()),
@@ -19,8 +19,8 @@ async fn test_exec_creates_idempotency() {
             cwd: None,
             environment: None,
             dependencies: Vec::new(),
-        },
-    );
+            source_context: None,
+        });
 
     let adapter = ExecAdapter;
 
@@ -71,8 +71,8 @@ async fn test_exec_unless_condition() {
     // Create marker file
     fs::write(&marker_file, "marker").expect("Failed to create marker");
 
-    let resource = pupoxide::domain::resource::Resource::Exec(
-        pupoxide::domain::resource::ExecResource {
+    let resource =
+        pupoxide::domain::resource::Resource::Exec(pupoxide::domain::resource::ExecResource {
             id: "Exec[test unless]".to_string(),
             command: "echo 'should not run'".to_string(),
             creates: None,
@@ -80,8 +80,8 @@ async fn test_exec_unless_condition() {
             cwd: None,
             environment: None,
             dependencies: Vec::new(),
-        },
-    );
+            source_context: None,
+        });
 
     let adapter = ExecAdapter;
 
@@ -105,8 +105,8 @@ async fn test_exec_with_environment() {
     let mut env = std::collections::HashMap::new();
     env.insert("TEST_VAR".to_string(), "test_value".to_string());
 
-    let resource = pupoxide::domain::resource::Resource::Exec(
-        pupoxide::domain::resource::ExecResource {
+    let resource =
+        pupoxide::domain::resource::Resource::Exec(pupoxide::domain::resource::ExecResource {
             id: "Exec[test env]".to_string(),
             command: format!("echo $TEST_VAR > {}", output_path),
             creates: None,
@@ -114,8 +114,8 @@ async fn test_exec_with_environment() {
             cwd: None,
             environment: Some(env),
             dependencies: Vec::new(),
-        },
-    );
+            source_context: None,
+        });
 
     let adapter = ExecAdapter;
     adapter.apply(&resource).await.expect("Failed to apply");
@@ -131,8 +131,8 @@ async fn test_exec_with_cwd() {
     let dir = tempdir().unwrap();
     let output_file = "cwd_test.txt";
 
-    let resource = pupoxide::domain::resource::Resource::Exec(
-        pupoxide::domain::resource::ExecResource {
+    let resource =
+        pupoxide::domain::resource::Resource::Exec(pupoxide::domain::resource::ExecResource {
             id: "Exec[test cwd]".to_string(),
             command: format!("echo 'cwd test' > {}", output_file),
             creates: None,
@@ -140,8 +140,8 @@ async fn test_exec_with_cwd() {
             cwd: Some(dir.path().to_path_buf()),
             environment: None,
             dependencies: Vec::new(),
-        },
-    );
+            source_context: None,
+        });
 
     let adapter = ExecAdapter;
     adapter.apply(&resource).await.expect("Failed to apply");
@@ -155,8 +155,8 @@ async fn test_exec_with_cwd() {
 
 #[tokio::test]
 async fn test_exec_command_failure() {
-    let resource = pupoxide::domain::resource::Resource::Exec(
-        pupoxide::domain::resource::ExecResource {
+    let resource =
+        pupoxide::domain::resource::Resource::Exec(pupoxide::domain::resource::ExecResource {
             id: "Exec[failing command]".to_string(),
             command: "exit 1".to_string(),
             creates: None,
@@ -164,8 +164,8 @@ async fn test_exec_command_failure() {
             cwd: None,
             environment: None,
             dependencies: Vec::new(),
-        },
-    );
+            source_context: None,
+        });
 
     let adapter = ExecAdapter;
     let result = adapter.apply(&resource).await;

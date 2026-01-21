@@ -17,6 +17,7 @@ macro_rules! file {
             owner: None,
             group: None,
             mode: None,
+            source_context: None,
         })
     };
     ($path:expr => { ensure: $ensure:expr }) => {
@@ -29,6 +30,7 @@ macro_rules! file {
             owner: None,
             group: None,
             mode: None,
+            source_context: None,
         })
     };
 }

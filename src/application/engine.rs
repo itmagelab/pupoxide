@@ -46,6 +46,25 @@ impl ExecutionContext {
             source_map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
+
+    pub fn get_source_context(&self) -> Option<crate::domain::resource::SourceContext> {
+        let stack = self.module_stack.lock().ok()?;
+        let mut context = crate::domain::resource::SourceContext::default();
+
+        for (inc_type, name) in stack.iter() {
+            match inc_type {
+                InclusionType::Role => context.role = Some(name.clone()),
+                InclusionType::Profile => context.profile = Some(name.clone()),
+                InclusionType::Module => context.module = Some(name.clone()),
+            }
+        }
+
+        if context.role.is_none() && context.profile.is_none() && context.module.is_none() {
+            None
+        } else {
+            Some(context)
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -10,6 +10,13 @@ pub enum Ensure {
     Absent,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct SourceContext {
+    pub role: Option<String>,
+    pub profile: Option<String>,
+    pub module: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ResourceState {
     Ensure(Ensure),
@@ -19,8 +26,6 @@ pub enum ResourceState {
         content: Option<Vec<u8>>,
     },
 }
-
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, validator::Validate, PartialEq)]
 pub struct FileResource {
@@ -32,6 +37,7 @@ pub struct FileResource {
     pub owner: Option<String>,
     pub group: Option<String>,
     pub mode: Option<String>,
+    pub source_context: Option<SourceContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -57,6 +63,7 @@ pub struct ExecResource {
     pub cwd: Option<PathBuf>,
     pub environment: Option<std::collections::HashMap<String, String>>,
     pub dependencies: Vec<String>,
+    pub source_context: Option<SourceContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, validator::Validate)]
@@ -68,6 +75,7 @@ pub struct DirectoryResource {
     pub owner: Option<String>,
     pub group: Option<String>,
     pub mode: Option<String>,
+    pub source_context: Option<SourceContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

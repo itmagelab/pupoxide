@@ -17,6 +17,7 @@ pub async fn execute_transaction(
         crate::domain::transaction::Transaction::new(transaction_id.clone(), catalog.clone());
 
     let mut reports = Vec::new();
+    let total_start = std::time::Instant::now();
 
     tracing::debug!(id = %transaction_id, dry_run = %dry_run, "Starting transaction");
 
@@ -51,10 +52,18 @@ pub async fn execute_transaction(
             _ => false,
         };
 
+        let source_context = match resource {
+            crate::domain::resource::Resource::File(f) => f.source_context.clone(),
+            crate::domain::resource::Resource::Directory(d) => d.source_context.clone(),
+            crate::domain::resource::Resource::Exec(e) => e.source_context.clone(),
+            _ => None,
+        };
+
         if is_already_correct {
             let report =
                 ResourceReport::new(resource.id().to_string(), ResourceStatus::Unchanged, false)
-                    .with_duration(start_time.elapsed());
+                    .with_duration(start_time.elapsed())
+                    .with_source_context(source_context);
             on_report(&report);
             reports.push(report);
             continue;
@@ -63,7 +72,8 @@ pub async fn execute_transaction(
         if dry_run {
             let report =
                 ResourceReport::new(resource.id().to_string(), ResourceStatus::WouldApply, true)
-                    .with_duration(start_time.elapsed());
+                    .with_duration(start_time.elapsed())
+                    .with_source_context(source_context);
             on_report(&report);
             reports.push(report);
             tracing::debug!(id = %resource.id(), "Would ensure resource");
@@ -75,7 +85,8 @@ pub async fn execute_transaction(
             let report =
                 ResourceReport::new(resource.id().to_string(), ResourceStatus::Failed, false)
                     .with_message(e.to_string())
-                    .with_duration(start_time.elapsed());
+                    .with_duration(start_time.elapsed())
+                    .with_source_context(source_context);
             on_report(&report);
             reports.push(report);
             tracing::error!(id = %resource.id(), error = %e, "Failed to apply resource");
@@ -84,7 +95,8 @@ pub async fn execute_transaction(
         } else {
             let report =
                 ResourceReport::new(resource.id().to_string(), ResourceStatus::Applied, true)
-                    .with_duration(start_time.elapsed());
+                    .with_duration(start_time.elapsed())
+                    .with_source_context(source_context);
             on_report(&report);
             reports.push(report);
         }
@@ -94,5 +106,6 @@ pub async fn execute_transaction(
         state_store.save_transaction(&transaction)?;
     }
     tracing::debug!(id = %transaction_id, "Transaction completed");
+    crate::interface::formatter::PrettyFormatter::print_summary(&reports, total_start.elapsed());
     Ok(reports)
 }

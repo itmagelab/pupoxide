@@ -17,11 +17,6 @@ print(`Default package manager: ${pkg_manager}`);
 
 b::pkg(["htop", "wget"], #{ ensure: "present" });
 
-file("/tmp/.cacherc", #{
-    ensure: "present",
-    content: "Global settings"
-});
-
 let dir = "/tmp/pupoxide/examples/cache";
 let timestamp_file = `${dir}/timestamp`;
 

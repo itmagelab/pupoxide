@@ -34,13 +34,33 @@ impl PrettyFormatter {
             duration_str.dimmed()
         );
 
+        if let Some(ctx) = &report.source_context {
+            let mut breadcrumbs = Vec::new();
+            if let Some(role) = &ctx.role {
+                breadcrumbs.push(role.clone());
+            }
+            if let Some(profile) = &ctx.profile {
+                breadcrumbs.push(profile.clone());
+            }
+            if let Some(module) = &ctx.module {
+                breadcrumbs.push(module.clone());
+            }
+
+            if !breadcrumbs.is_empty() {
+                line.push_str(&format!(
+                    " {}",
+                    format!("[{}]", breadcrumbs.join("::")).dimmed()
+                ));
+            }
+        }
+
         if let Some(msg) = &report.message {
             line.push_str(&format!("\n   {}", msg.red()));
         }
         line
     }
 
-    pub fn print_summary(reports: &[ResourceReport]) {
+    pub fn print_summary(reports: &[ResourceReport], total_duration: std::time::Duration) {
         let mut applied = 0;
         let mut unchanged = 0;
         let mut failed = 0;
@@ -58,7 +78,7 @@ impl PrettyFormatter {
 
         println!("{:-<60}", "");
         let summary = format!(
-            "Summary: {} applied, {} unchanged, {} failed{}",
+            "Summary: {} applied, {} unchanged, {} failed{} (Total: {:.2}s)",
             applied,
             unchanged,
             failed,
@@ -66,7 +86,8 @@ impl PrettyFormatter {
                 format!(", {} would apply", would_apply)
             } else {
                 "".to_string()
-            }
+            },
+            total_duration.as_secs_f64()
         );
 
         if failed > 0 {

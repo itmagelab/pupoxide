@@ -262,7 +262,7 @@ impl PupoxideAgent {
         let provider = std::sync::Arc::new(provider_registry);
 
         crate::interface::formatter::PrettyFormatter::print_header();
-        let reports = crate::application::execute_transaction(
+        let _reports = crate::application::execute_transaction(
             catalog,
             &state_store,
             provider,
@@ -279,8 +279,6 @@ impl PupoxideAgent {
             },
         )
         .await?;
-
-        crate::interface::formatter::PrettyFormatter::print_summary(&reports);
 
         Ok(())
     }
