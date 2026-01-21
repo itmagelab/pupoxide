@@ -111,7 +111,9 @@ pub async fn execute_transaction(
             tokio::spawn(async move {
                 let report =
                     process_single_resource(resource, provider, transaction, dry_run).await;
-                let _ = tx_clone.send((res_id, report)).await;
+                if let Err(e) = tx_clone.send((res_id.clone(), report)).await {
+                    tracing::error!(id = %res_id, error = %e, "Failed to send report to main thread");
+                }
             });
         }
 
@@ -146,8 +148,20 @@ pub async fn execute_transaction(
         if !reports.contains_key(id) {
             let resource = resource_map.get(id).expect("Exists");
             let source_context = get_source_context(resource);
+
+            // Check if it was supposed to be skipped due to a failed parent
+            let parent_failed = resource
+                .dependencies()
+                .iter()
+                .any(|d| failed_roots.contains(d));
+            let msg = if parent_failed {
+                "Dependency failed".to_string()
+            } else {
+                "Dependency cycle or unhandled state".to_string()
+            };
+
             let report = ResourceReport::new(id.clone(), ResourceStatus::Skipped, false)
-                .with_message("Dependency cycle or parent failed".to_string())
+                .with_message(msg)
                 .with_source_context(source_context);
             reports.insert(id.clone(), report);
         }
