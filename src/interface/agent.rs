@@ -261,11 +261,26 @@ impl PupoxideAgent {
         provider_registry.register(std::sync::Arc::new(crate::infrastructure::ExecAdapter));
         let provider = std::sync::Arc::new(provider_registry);
 
-        let reports =
-            crate::application::execute_transaction(catalog, &state_store, provider, dry_run)
-                .await?;
+        crate::interface::formatter::PrettyFormatter::print_header();
+        let reports = crate::application::execute_transaction(
+            catalog,
+            &state_store,
+            provider,
+            dry_run,
+            |report| {
+                if show_unchanged
+                    || report.status != crate::domain::report::ResourceStatus::Unchanged
+                {
+                    println!(
+                        "{}",
+                        crate::interface::formatter::PrettyFormatter::format_line(report)
+                    );
+                }
+            },
+        )
+        .await?;
 
-        crate::interface::formatter::PrettyFormatter::display(&reports, show_unchanged);
+        crate::interface::formatter::PrettyFormatter::print_summary(&reports);
 
         Ok(())
     }

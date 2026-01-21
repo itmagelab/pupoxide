@@ -4,68 +4,42 @@ use colored::*;
 pub struct PrettyFormatter;
 
 impl PrettyFormatter {
-    pub fn display(reports: &[ResourceReport], show_unchanged: bool) {
-        if reports.is_empty() {
-            println!("\n{}", "No resources to apply.".yellow());
-            return;
-        }
-
-        let filtered_reports: Vec<_> = reports
-            .iter()
-            .filter(|r| show_unchanged || r.status != ResourceStatus::Unchanged)
-            .collect();
-
-        if filtered_reports.is_empty() && !reports.is_empty() {
-            println!(
-                "\n{}",
-                "No changes detected. All resources are already in the desired state."
-                    .green()
-                    .bold()
-            );
-            println!("(Use --show-unchanged to see all resources)");
-            return;
-        }
-
+    pub fn print_header() {
         println!("\n{}", "Catalog Application Summary:".bold().underline());
         println!("{:-<60}", "");
+    }
 
+    pub fn format_line(report: &ResourceReport) -> String {
+        let status_str = match report.status {
+            ResourceStatus::Applied => "SUCCESS".green().bold(),
+            ResourceStatus::Unchanged => "UNCHANGED".cyan(),
+            ResourceStatus::Failed => "FAILED".red().bold(),
+            ResourceStatus::Skipped => "SKIPPED".yellow(),
+            ResourceStatus::WouldApply => "WOULD APPLY".blue().bold(),
+        };
+
+        let padding = ".".repeat(60_usize.saturating_sub(report.resource_id.len() + 12));
+        let mut line = format!("{} {} [{}]", report.resource_id, padding, status_str);
+
+        if let Some(msg) = &report.message {
+            line.push_str(&format!("\n   {}", msg.red()));
+        }
+        line
+    }
+
+    pub fn print_summary(reports: &[ResourceReport]) {
         let mut applied = 0;
         let mut unchanged = 0;
         let mut failed = 0;
         let mut would_apply = 0;
 
-        for report in reports {
-            if !show_unchanged && report.status == ResourceStatus::Unchanged {
-                unchanged += 1;
-                continue;
-            }
-
-            let status_str = match report.status {
-                ResourceStatus::Applied => {
-                    applied += 1;
-                    "SUCCESS".green().bold()
-                }
-                ResourceStatus::Unchanged => {
-                    unchanged += 1;
-                    "UNCHANGED".cyan()
-                }
-                ResourceStatus::Failed => {
-                    failed += 1;
-                    "FAILED".red().bold()
-                }
-                ResourceStatus::Skipped => "SKIPPED".yellow(),
-                ResourceStatus::WouldApply => {
-                    would_apply += 1;
-                    "WOULD APPLY".blue().bold()
-                }
-            };
-
-            let padding = ".".repeat(60_usize.saturating_sub(report.resource_id.len() + 12));
-            print!("{} {} ", report.resource_id, padding);
-            println!("[{}]", status_str);
-
-            if let Some(msg) = &report.message {
-                println!("   {}", msg.red());
+        for r in reports {
+            match r.status {
+                ResourceStatus::Applied => applied += 1,
+                ResourceStatus::Unchanged => unchanged += 1,
+                ResourceStatus::Failed => failed += 1,
+                ResourceStatus::WouldApply => would_apply += 1,
+                _ => {}
             }
         }
 
@@ -88,5 +62,16 @@ impl PrettyFormatter {
             println!("{}", summary.green().bold());
         }
         println!();
+    }
+
+    /// Legend for when no changes are detected
+    pub fn print_no_changes() {
+        println!(
+            "\n{}",
+            "No changes detected. All resources are already in the desired state."
+                .green()
+                .bold()
+        );
+        println!("(Use --show-unchanged to see all resources)");
     }
 }

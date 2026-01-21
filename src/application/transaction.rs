@@ -10,6 +10,7 @@ pub async fn execute_transaction(
     state_store: &StateStore,
     provider: Arc<dyn ResourceProvider>,
     dry_run: bool,
+    mut on_report: impl FnMut(&ResourceReport),
 ) -> Result<Vec<ResourceReport>> {
     let transaction_id = format!("tx_{}", chrono::Utc::now().timestamp());
     let mut transaction =
@@ -49,39 +50,37 @@ pub async fn execute_transaction(
         };
 
         if is_already_correct {
-            reports.push(ResourceReport::new(
-                resource.id().to_string(),
-                ResourceStatus::Unchanged,
-                false,
-            ));
+            let report =
+                ResourceReport::new(resource.id().to_string(), ResourceStatus::Unchanged, false);
+            on_report(&report);
+            reports.push(report);
             continue;
         }
 
         if dry_run {
-            reports.push(ResourceReport::new(
-                resource.id().to_string(),
-                ResourceStatus::WouldApply,
-                true,
-            ));
+            let report =
+                ResourceReport::new(resource.id().to_string(), ResourceStatus::WouldApply, true);
+            on_report(&report);
+            reports.push(report);
             tracing::debug!(id = %resource.id(), "Would ensure resource");
             continue;
         }
 
         // 3. Apply changes
         if let Err(e) = provider.apply(resource).await {
-            reports.push(
+            let report =
                 ResourceReport::new(resource.id().to_string(), ResourceStatus::Failed, false)
-                    .with_message(e.to_string()),
-            );
+                    .with_message(e.to_string());
+            on_report(&report);
+            reports.push(report);
             tracing::error!(id = %resource.id(), error = %e, "Failed to apply resource");
             state_store.save_transaction(&transaction)?;
             return Ok(reports); // Return what we have so far
         } else {
-            reports.push(ResourceReport::new(
-                resource.id().to_string(),
-                ResourceStatus::Applied,
-                true,
-            ));
+            let report =
+                ResourceReport::new(resource.id().to_string(), ResourceStatus::Applied, true);
+            on_report(&report);
+            reports.push(report);
         }
     }
 

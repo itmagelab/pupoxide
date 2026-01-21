@@ -31,8 +31,18 @@ pub async fn handle_run(
     let facts = crate::infrastructure::Facter::collect();
     let catalog = engine.run_manifest(file, "localhost".to_string(), "local".to_string(), facts)?;
 
-    let reports = execute_transaction(catalog, &state_store, provider, dry_run).await?;
-    crate::interface::formatter::PrettyFormatter::display(&reports, show_unchanged);
+    crate::interface::formatter::PrettyFormatter::print_header();
+    let reports = execute_transaction(catalog, &state_store, provider, dry_run, |report| {
+        if show_unchanged || report.status != crate::domain::report::ResourceStatus::Unchanged {
+            println!(
+                "{}",
+                crate::interface::formatter::PrettyFormatter::format_line(report)
+            );
+        }
+    })
+    .await?;
+
+    crate::interface::formatter::PrettyFormatter::print_summary(&reports);
 
     Ok(())
 }
@@ -76,8 +86,18 @@ pub async fn handle_apply(
         facts,
     )?;
 
-    let reports = execute_transaction(catalog, &state_store, provider, dry_run).await?;
-    crate::interface::formatter::PrettyFormatter::display(&reports, show_unchanged);
+    crate::interface::formatter::PrettyFormatter::print_header();
+    let reports = execute_transaction(catalog, &state_store, provider, dry_run, |report| {
+        if show_unchanged || report.status != crate::domain::report::ResourceStatus::Unchanged {
+            println!(
+                "{}",
+                crate::interface::formatter::PrettyFormatter::format_line(report)
+            );
+        }
+    })
+    .await?;
+
+    crate::interface::formatter::PrettyFormatter::print_summary(&reports);
 
     Ok(())
 }
