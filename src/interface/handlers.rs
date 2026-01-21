@@ -8,7 +8,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
-pub async fn handle_run(file: PathBuf, module_path: Option<PathBuf>, dry_run: bool) -> Result<()> {
+pub async fn handle_run(
+    file: PathBuf,
+    module_path: Option<PathBuf>,
+    dry_run: bool,
+    show_unchanged: bool,
+) -> Result<()> {
     let state_dir = PathBuf::from("/tmp/pupoxide");
     let state_store = crate::infrastructure::StateStore::new(state_dir.join("state"));
 
@@ -27,12 +32,17 @@ pub async fn handle_run(file: PathBuf, module_path: Option<PathBuf>, dry_run: bo
     let catalog = engine.run_manifest(file, "localhost".to_string(), "local".to_string(), facts)?;
 
     let reports = execute_transaction(catalog, &state_store, provider, dry_run).await?;
-    crate::interface::formatter::PrettyFormatter::display(&reports);
+    crate::interface::formatter::PrettyFormatter::display(&reports, show_unchanged);
 
     Ok(())
 }
 
-pub async fn handle_apply(environment: String, dry_run: bool, config: PathBuf) -> Result<()> {
+pub async fn handle_apply(
+    environment: String,
+    dry_run: bool,
+    show_unchanged: bool,
+    config: PathBuf,
+) -> Result<()> {
     let state_dir = PathBuf::from("/tmp/pupoxide");
     let state_store = crate::infrastructure::StateStore::new(state_dir.join("state"));
 
@@ -67,7 +77,7 @@ pub async fn handle_apply(environment: String, dry_run: bool, config: PathBuf) -
     )?;
 
     let reports = execute_transaction(catalog, &state_store, provider, dry_run).await?;
-    crate::interface::formatter::PrettyFormatter::display(&reports);
+    crate::interface::formatter::PrettyFormatter::display(&reports, show_unchanged);
 
     Ok(())
 }
@@ -195,6 +205,7 @@ pub struct AgentOptions {
     pub check: bool,
     pub check_timeout: u64,
     pub dry_run: bool,
+    pub show_unchanged: bool,
     pub cert_dir: Option<PathBuf>,
 }
 
@@ -211,7 +222,7 @@ pub async fn handle_agent(opts: AgentOptions) -> Result<()> {
     } else if opts.bootstrap {
         agent.bootstrap().await?;
     } else {
-        agent.run(opts.dry_run).await?;
+        agent.run(opts.dry_run, opts.show_unchanged).await?;
     }
     Ok(())
 }

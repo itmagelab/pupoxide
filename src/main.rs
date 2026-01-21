@@ -22,14 +22,23 @@ async fn main() -> Result<()> {
             file,
             module_path,
             dry_run,
+            show_unchanged,
         } => {
-            pupoxide::interface::handlers::handle_run(file, module_path, dry_run).await?;
+            pupoxide::interface::handlers::handle_run(file, module_path, dry_run, show_unchanged)
+                .await?;
         }
         Commands::Apply {
             environment,
             dry_run,
+            show_unchanged,
         } => {
-            pupoxide::interface::handlers::handle_apply(environment, dry_run, cli.config).await?;
+            pupoxide::interface::handlers::handle_apply(
+                environment,
+                dry_run,
+                show_unchanged,
+                cli.config,
+            )
+            .await?;
         }
         Commands::Master { action, config } => {
             pupoxide::interface::handlers::handle_master(action, config, cli.config).await?;
@@ -42,6 +51,7 @@ async fn main() -> Result<()> {
             check,
             check_timeout,
             dry_run,
+            show_unchanged,
             cert_dir,
         } => {
             pupoxide::interface::handlers::handle_agent(
@@ -53,6 +63,7 @@ async fn main() -> Result<()> {
                     check,
                     check_timeout,
                     dry_run,
+                    show_unchanged,
                     cert_dir,
                 },
             )

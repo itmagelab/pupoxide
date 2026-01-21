@@ -4,9 +4,25 @@ use colored::*;
 pub struct PrettyFormatter;
 
 impl PrettyFormatter {
-    pub fn display(reports: &[ResourceReport]) {
+    pub fn display(reports: &[ResourceReport], show_unchanged: bool) {
         if reports.is_empty() {
             println!("\n{}", "No resources to apply.".yellow());
+            return;
+        }
+
+        let filtered_reports: Vec<_> = reports
+            .iter()
+            .filter(|r| show_unchanged || r.status != ResourceStatus::Unchanged)
+            .collect();
+
+        if filtered_reports.is_empty() && !reports.is_empty() {
+            println!(
+                "\n{}",
+                "No changes detected. All resources are already in the desired state."
+                    .green()
+                    .bold()
+            );
+            println!("(Use --show-unchanged to see all resources)");
             return;
         }
 
@@ -19,6 +35,11 @@ impl PrettyFormatter {
         let mut would_apply = 0;
 
         for report in reports {
+            if !show_unchanged && report.status == ResourceStatus::Unchanged {
+                unchanged += 1;
+                continue;
+            }
+
             let status_str = match report.status {
                 ResourceStatus::Applied => {
                     applied += 1;

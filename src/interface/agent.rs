@@ -214,7 +214,7 @@ impl PupoxideAgent {
     }
 
     /// Phase 2: Regular operation - Fetch catalog using mTLS
-    pub async fn run(&self, dry_run: bool) -> Result<()> {
+    pub async fn run(&self, dry_run: bool, show_unchanged: bool) -> Result<()> {
         // Acquire exclusive lock - only one instance per agent can run at a time
         let _lock = self.acquire_lock(300).await?; // 5 minute timeout
 
@@ -265,7 +265,7 @@ impl PupoxideAgent {
             crate::application::execute_transaction(catalog, &state_store, provider, dry_run)
                 .await?;
 
-        crate::interface::formatter::PrettyFormatter::display(&reports);
+        crate::interface::formatter::PrettyFormatter::display(&reports, show_unchanged);
 
         Ok(())
     }

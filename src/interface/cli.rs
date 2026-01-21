@@ -26,6 +26,10 @@ pub enum Commands {
         /// Run in dry-run mode without making changes
         #[arg(long, default_value = "false")]
         dry_run: bool,
+
+        /// Show unchanged resources in the output
+        #[arg(long, default_value = "false")]
+        show_unchanged: bool,
     },
     /// Apply configuration from an environment locally
     Apply {
@@ -35,6 +39,10 @@ pub enum Commands {
         /// Run in dry-run mode without making changes
         #[arg(long, default_value = "false")]
         dry_run: bool,
+
+        /// Show unchanged resources in the output
+        #[arg(long, default_value = "false")]
+        show_unchanged: bool,
     },
     /// Manage the Pupoxide Master server
     Master {
@@ -69,6 +77,10 @@ pub enum Commands {
         /// Run in dry-run mode without making changes
         #[arg(long, default_value = "false")]
         dry_run: bool,
+
+        /// Show unchanged resources in the output
+        #[arg(long, default_value = "false")]
+        show_unchanged: bool,
 
         /// Optional certificate directory
         #[arg(short, long)]
