@@ -5,6 +5,7 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::{debug, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Catalog {
@@ -67,38 +68,62 @@ impl Catalog {
         self.id_map.get(id).map(|&idx| &self.graph[idx])
     }
 
-    /// Populates graph edges based on resource dependencies
+    /// Populates graph edges based on resource dependencies.
+    ///
+    /// This function iterates over all resources in the graph. For each resource, it checks
+    /// its `dependencies` list (which contains resource IDs). If a dependency ID is found
+    /// in the `id_map`, a graph edge is created from the dependency to the dependent resource.
+    ///
+    /// This ensures that the graph structure reflects the logical dependencies defined
+    /// in the resources, allowing for correct topological sorting and execution.
+    ///
+    /// If a dependency is missing from the catalog, a warning is logged, but the edge
+    /// is skipped (soft failure).
     pub fn build_edges(&mut self) {
-        // Clear existing edges to avoid duplicates? Or assume clean slate?
-        // Safest is to collect all desired edges, and then checking if they exist is expensive O(E).
-        // For now, let's assume this is called once after loading resources.
-        // We can clear edges first if we want to be idempotent.
+        // Clear existing edges to avoid duplicates.
+        // This makes the operation idempotent and safe to call multiple times,
+        // e.g. after adding more resources.
         self.graph.clear_edges();
 
         let mut edges_to_add = Vec::new();
+        let mut missing_deps_count = 0;
+
+        debug!("Building graph edges from resource dependencies...");
 
         for idx in self.graph.node_indices() {
             let resource = &self.graph[idx];
+            let resource_id = resource.id().to_string();
+
             for dep_id in resource.dependencies() {
                 if let Some(&dep_idx) = self.id_map.get(dep_id) {
                     // Dependency: resource -> dep (resource depends on dep)
-                    // Edge direction: resource -> dep or dep -> resource?
+                    // Edge direction: dep -> resource
                     // topological sort usually gives order where dep comes BEFORE resource.
                     // If edge is dep -> resource, then dep comes first.
-                    // petgraph::algo::toposort returns nodes in order such that for edge a -> b, a comes before b.
-                    // So if we want dep before resource, we need edge dep -> resource.
                     edges_to_add.push((dep_idx, idx));
                 } else {
-                    // Log warning or error? For now, we tolerate missing deps (maybe optional?)
-                    // But in Puppet, missing dependency is usually an error.
-                    // Let's log it if we had a logger, but we don't here.
+                    // Log warning for missing dependency.
+                    // This often happens if dependencies are conditional or external.
+                    warn!(
+                        resource_id = %resource_id,
+                        missing_dependency = %dep_id,
+                        "Skipping missing dependency for resource"
+                    );
+                    missing_deps_count += 1;
                 }
             }
         }
 
+        let edge_count = edges_to_add.len();
         for (from, to) in edges_to_add {
             self.graph.add_edge(from, to, ());
         }
+
+        debug!(
+            edges_added = edge_count,
+            missing_dependencies = missing_deps_count,
+            "Graph edges built successfully"
+        );
     }
 
     pub fn resources(&self) -> Vec<Resource> {
@@ -151,7 +176,12 @@ impl Catalog {
 
         let resource = &self.graph[idx];
         target.add_resource(resource.clone());
-        let new_idx = *target.id_map.get(resource.id()).unwrap();
+        let new_idx = *target.id_map.get(resource.id()).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invariant failed: resource {} not found after addition",
+                resource.id()
+            )
+        })?;
         visited.insert(idx, new_idx);
 
         // Copy edges (dependencies)

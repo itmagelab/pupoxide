@@ -227,7 +227,7 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
         };
 
         // 2. Create initial metadata resource to track module dependencies
-        let _ = {
+        {
             let mut catalog = exec_ctx.catalog.lock().expect("Failed to lock catalog");
 
             let mut dependencies = Vec::new();
@@ -321,9 +321,8 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
             // Simplified for now: just collect all resources and filter by source context if available.
             // Actually, petgraph is better here.
 
-            let mut end_deps = Vec::new();
             // Fallback: depend on start marker
-            end_deps.push(handle.start_id.clone());
+            let end_deps = vec![handle.start_id.clone()];
 
             let resource = Resource::Meta(crate::domain::resource::MetaResource {
                 id: handle.end_id.clone(),
