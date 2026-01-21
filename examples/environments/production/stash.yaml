@@ -1,5 +1,9 @@
 version: 1
 hierarchy:
+  - name: "Node Specific"
+    path: "nodes/{{ facts.hostname }}.yaml"
+  - name: "OS Version Specific"
+    path: "os/{{ facts.os_family }}/{{ facts.os_version }}.yaml"
   - name: "OS Specific"
     path: "os/{{ facts.os_family }}.yaml"
   - name: "Common"

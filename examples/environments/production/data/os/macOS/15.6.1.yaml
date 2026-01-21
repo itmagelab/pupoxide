@@ -1,0 +1,2 @@
+package_manager: "brew (from 15.6.1 level)"
+specific_feature: "enabled"
