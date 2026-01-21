@@ -3,6 +3,7 @@ pub mod catalog;
 pub mod dsl;
 pub mod error;
 pub mod facts;
+pub mod report;
 pub mod resource;
 pub mod transaction;
 

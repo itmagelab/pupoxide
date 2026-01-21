@@ -1,8 +1,8 @@
 use crate::domain::bootstrap::{BootstrapRequest, BootstrapResponse};
 use crate::domain::catalog::Catalog;
-use crate::infrastructure::facter::Facter;
 use crate::infrastructure::certificate::AgentCertificateRequest;
-use anyhow::{anyhow, Context, Result};
+use crate::infrastructure::facter::Facter;
+use anyhow::{Context, Result, anyhow};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tracing::{debug, info};
@@ -21,9 +21,8 @@ impl PupoxideAgent {
         environment: String,
         cert_dir: Option<PathBuf>,
     ) -> Self {
-        let cert_dir = cert_dir.unwrap_or_else(|| {
-            PathBuf::from(format!("/etc/pupoxide/agents/{}", node_name))
-        });
+        let cert_dir = cert_dir
+            .unwrap_or_else(|| PathBuf::from(format!("/etc/pupoxide/agents/{}", node_name)));
 
         Self {
             server_url,
@@ -46,19 +45,19 @@ impl PupoxideAgent {
             .context("Failed to create certificate directory")?;
 
         // 1. Generate CSR and private key
-        let (csr_req, private_key_pem, self_signed_cert) = AgentCertificateRequest::generate(&self.node_name)
-            .context("Failed to generate CSR")?;
+        let (csr_req, private_key_pem, self_signed_cert) =
+            AgentCertificateRequest::generate(&self.node_name).context("Failed to generate CSR")?;
 
         debug!(node_name = %self.node_name, "CSR generated");
 
         // Save the self-signed cert and private key (these are guaranteed to match)
         let key_path = self.cert_dir.join("agent.key");
         let self_signed_path = self.cert_dir.join("agent-self-signed.pem");
-        
+
         tokio::fs::write(&key_path, &private_key_pem)
             .await
             .context("Failed to write agent private key")?;
-        
+
         tokio::fs::write(&self_signed_path, &self_signed_cert)
             .await
             .context("Failed to write agent self-signed certificate")?;
@@ -123,8 +122,10 @@ impl PupoxideAgent {
         println!("  Status: {}", bootstrap_response.status);
         println!("  Message: {}", bootstrap_response.message);
         println!("\n→ Admin must approve request before agent can run.");
-        println!("  Check status with: pupoxide agent --server {} --node {} --environment {} --bootstrap --check",
-                 self.server_url, self.node_name, self.environment);
+        println!(
+            "  Check status with: pupoxide agent --server {} --node {} --environment {} --bootstrap --check",
+            self.server_url, self.node_name, self.environment
+        );
 
         Ok(())
     }
@@ -165,9 +166,11 @@ impl PupoxideAgent {
                 }
                 "approved" => {
                     // Save certificate
-                    let cert_pem = bootstrap_response.certificate
+                    let cert_pem = bootstrap_response
+                        .certificate
                         .ok_or_else(|| anyhow!("No certificate in approval response"))?;
-                    let ca_pem = bootstrap_response.ca_certificate
+                    let ca_pem = bootstrap_response
+                        .ca_certificate
                         .ok_or_else(|| anyhow!("No CA certificate in approval response"))?;
 
                     let cert_path = self.cert_dir.join("agent.pem");
@@ -190,8 +193,10 @@ impl PupoxideAgent {
                     println!("\n✓ Bootstrap approved!");
                     println!("  Certificate saved to: {:?}", cert_path);
                     println!("\n→ You can now run the agent:");
-                    println!("  pupoxide agent --server {} --node {} --environment {}", 
-                             self.server_url, self.node_name, self.environment);
+                    println!(
+                        "  pupoxide agent --server {} --node {} --environment {}",
+                        self.server_url, self.node_name, self.environment
+                    );
 
                     return Ok(());
                 }
@@ -199,7 +204,10 @@ impl PupoxideAgent {
                     return Err(anyhow!("Bootstrap request was rejected by admin"));
                 }
                 _ => {
-                    return Err(anyhow!("Unknown bootstrap status: {}", bootstrap_response.status));
+                    return Err(anyhow!(
+                        "Unknown bootstrap status: {}",
+                        bootstrap_response.status
+                    ));
                 }
             }
         }
@@ -233,20 +241,15 @@ impl PupoxideAgent {
 
         // 1. Collect facts
         let facts = Facter::collect();
-        info!(
-            fact_count = facts.values.len(),
-            "Collected facts"
-        );
+        info!(fact_count = facts.values.len(), "Collected facts");
 
         // 2. Fetch catalog using mTLS
-        let catalog = self.fetch_catalog(&cert_path, &key_path, &ca_path, facts)
+        let catalog = self
+            .fetch_catalog(&cert_path, &key_path, &ca_path, facts)
             .await
             .context("Failed to fetch catalog")?;
 
-        info!(
-            resource_count = catalog.resources.len(),
-            "Received catalog"
-        );
+        info!(resource_count = catalog.resources.len(), "Received catalog");
 
         // 3. Apply changes with rollback support
         let state_dir = std::path::PathBuf::from("/tmp/pupoxide");
@@ -258,15 +261,12 @@ impl PupoxideAgent {
         provider_registry.register(std::sync::Arc::new(crate::infrastructure::ExecAdapter));
         let provider = std::sync::Arc::new(provider_registry);
 
-        crate::application::execute_transaction(
-            catalog,
-            &state_store,
-            provider,
-            dry_run,
-        )
-        .await?;
+        let reports =
+            crate::application::execute_transaction(catalog, &state_store, provider, dry_run)
+                .await?;
 
-        info!("Catalog application finished successfully");
+        crate::interface::formatter::PrettyFormatter::display(&reports);
+
         Ok(())
     }
 
@@ -281,7 +281,7 @@ impl PupoxideAgent {
         // For mTLS, we use the self-signed certificate that matches the private key
         // The server-signed certificate is stored separately for audit/verification
         let self_signed_cert_path = self.cert_dir.join("agent-self-signed.pem");
-        
+
         // Load self-signed certificate and private key (these are guaranteed to match)
         let cert_pem = match tokio::fs::read_to_string(&self_signed_cert_path).await {
             Ok(content) => content,
@@ -397,7 +397,8 @@ pub struct AgentLock {
 impl AgentLock {
     /// Manually release the lock before the guard is dropped
     pub async fn release(&self) -> Result<()> {
-        tokio::fs::remove_file(&self.lock_path).await
+        tokio::fs::remove_file(&self.lock_path)
+            .await
             .context("Failed to remove lock file")?;
         info!(path = ?self.lock_path, "Released agent lock");
         Ok(())

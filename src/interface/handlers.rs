@@ -26,7 +26,9 @@ pub async fn handle_run(file: PathBuf, module_path: Option<PathBuf>, dry_run: bo
     let facts = crate::infrastructure::Facter::collect();
     let catalog = engine.run_manifest(file, "localhost".to_string(), "local".to_string(), facts)?;
 
-    execute_transaction(catalog, &state_store, provider, dry_run).await?;
+    let reports = execute_transaction(catalog, &state_store, provider, dry_run).await?;
+    crate::interface::formatter::PrettyFormatter::display(&reports);
+
     Ok(())
 }
 
@@ -64,7 +66,9 @@ pub async fn handle_apply(environment: String, dry_run: bool, config: PathBuf) -
         facts,
     )?;
 
-    execute_transaction(catalog, &state_store, provider, dry_run).await?;
+    let reports = execute_transaction(catalog, &state_store, provider, dry_run).await?;
+    crate::interface::formatter::PrettyFormatter::display(&reports);
+
     Ok(())
 }
 

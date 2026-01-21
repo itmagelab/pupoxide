@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod cli;
+pub mod formatter;
 pub mod graph;
 pub mod handlers;
 pub mod server;
