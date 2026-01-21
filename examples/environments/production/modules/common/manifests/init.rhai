@@ -1,5 +1,20 @@
 import "brew" as b;
 
+// Use variables from stash
+let app_name = lookup("app_name", "Unknown App");
+let app_port = lookup("app_port", 80);
+
+print(`Configuring ${app_name} on port ${app_port}`);
+
+file("/tmp/app_config.txt", #{
+    ensure: "present",
+    content: `App: ${app_name}\nPort: ${app_port}\n`
+});
+
+// Example of OS-specific lookup
+let pkg_manager = lookup("package_manager", "apt");
+print(`Default package manager: ${pkg_manager}`);
+
 b::pkg(["htop", "wget"], #{ ensure: "present" });
 
 file("/tmp/.cacherc", #{

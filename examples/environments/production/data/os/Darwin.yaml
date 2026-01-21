@@ -1,0 +1,2 @@
+package_manager: "brew"
+motd_path: "/etc/motd"
