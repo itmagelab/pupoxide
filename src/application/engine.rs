@@ -50,13 +50,23 @@ impl ExecutionContext {
     pub fn get_source_context(&self) -> Option<crate::domain::resource::SourceContext> {
         let stack = self.module_stack.lock().ok()?;
         let mut context = crate::domain::resource::SourceContext::default();
+        let mut modules = Vec::new();
 
         for (inc_type, name) in stack.iter() {
+            let mut normalized_name = name.strip_prefix("./").unwrap_or(name);
+            normalized_name = normalized_name
+                .strip_suffix(".rhai")
+                .unwrap_or(normalized_name);
+
             match inc_type {
-                InclusionType::Role => context.role = Some(name.clone()),
-                InclusionType::Profile => context.profile = Some(name.clone()),
-                InclusionType::Module => context.module = Some(name.clone()),
+                InclusionType::Role => context.role = Some(normalized_name.to_string()),
+                InclusionType::Profile => context.profile = Some(normalized_name.to_string()),
+                InclusionType::Module => modules.push(normalized_name.to_string()),
             }
+        }
+
+        if !modules.is_empty() {
+            context.module = Some(modules.join("::"));
         }
 
         if context.role.is_none() && context.profile.is_none() && context.module.is_none() {

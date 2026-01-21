@@ -18,7 +18,46 @@ impl PrettyFormatter {
             ResourceStatus::WouldApply => "WOULD APPLY".blue().bold(),
         };
 
-        let padding = ".".repeat(60_usize.saturating_sub(report.resource_id.len() + 12));
+        let mut breadcrumbs_str = String::new();
+        if let Some(ctx) = &report.source_context {
+            let mut parts = Vec::new();
+            if let Some(role) = &ctx.role {
+                parts.push(role.clone());
+            }
+            if let Some(profile) = &ctx.profile {
+                parts.push(profile.clone());
+            }
+            if let Some(module) = &ctx.module {
+                parts.push(module.clone());
+            }
+
+            if !parts.is_empty() {
+                breadcrumbs_str = format!("[{}] ", parts.join("::")).dimmed().to_string();
+            }
+        }
+
+        // Adjust padding considering breadcrumbs (using visible length for better estimation)
+        // Since we use dimmed(), the underlying string has ANSI codes.
+        // We'll estimate based on names length.
+        let bc_len = report
+            .source_context
+            .as_ref()
+            .map(|ctx| {
+                let mut l = 2; // []
+                if let Some(r) = &ctx.role {
+                    l += r.len();
+                }
+                if let Some(p) = &ctx.profile {
+                    l += if l > 2 { 2 } else { 0 } + p.len();
+                }
+                if let Some(m) = &ctx.module {
+                    l += if l > 2 { 2 } else { 0 } + m.len();
+                }
+                l + 1 // space
+            })
+            .unwrap_or(0);
+
+        let padding = ".".repeat(75_usize.saturating_sub(report.resource_id.len() + 12 + bc_len));
         let duration_ms = report.duration.as_millis();
         let duration_str = if duration_ms < 1000 {
             format!("({}ms)", duration_ms)
@@ -27,32 +66,13 @@ impl PrettyFormatter {
         };
 
         let mut line = format!(
-            "{} {} [{}] {}",
+            "{}{} {} [{}] {}",
+            breadcrumbs_str,
             report.resource_id,
             padding,
             status_str,
             duration_str.dimmed()
         );
-
-        if let Some(ctx) = &report.source_context {
-            let mut breadcrumbs = Vec::new();
-            if let Some(role) = &ctx.role {
-                breadcrumbs.push(role.clone());
-            }
-            if let Some(profile) = &ctx.profile {
-                breadcrumbs.push(profile.clone());
-            }
-            if let Some(module) = &ctx.module {
-                breadcrumbs.push(module.clone());
-            }
-
-            if !breadcrumbs.is_empty() {
-                line.push_str(&format!(
-                    " {}",
-                    format!("[{}]", breadcrumbs.join("::")).dimmed()
-                ));
-            }
-        }
 
         if let Some(msg) = &report.message {
             line.push_str(&format!("\n   {}", msg.red()));
