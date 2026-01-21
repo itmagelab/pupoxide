@@ -41,6 +41,7 @@ tokio-rustls = "0.24"
 time = "0.3"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 colored = "2.1"
+tera = "1.20"
 
 [dev-dependencies]
 tempfile = "3"

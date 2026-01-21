@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +26,7 @@ pub struct Stash {
     _config_path: PathBuf,
     data_dir: PathBuf,
     config: StashConfig,
+    tera: Arc<std::sync::Mutex<tera::Tera>>,
 }
 
 impl Stash {
@@ -46,6 +48,7 @@ impl Stash {
             _config_path: config_path,
             data_dir,
             config,
+            tera: Arc::new(std::sync::Mutex::new(tera::Tera::default())),
         }))
     }
 
@@ -59,17 +62,13 @@ impl Stash {
         }
 
         // Check defaults if configured
-        self.config.defaults.as_ref().and_then(|defaults| {
-            defaults.get(key).cloned()
-        })
+        self.config
+            .defaults
+            .as_ref()
+            .and_then(|defaults| defaults.get(key).cloned())
     }
 
-    fn lookup_in_entry(
-        &self,
-        entry: &HierarchyEntry,
-        key: &str,
-        facts: &Facts,
-    ) -> Option<Value> {
+    fn lookup_in_entry(&self, entry: &HierarchyEntry, key: &str, facts: &Facts) -> Option<Value> {
         let mut paths = Vec::new();
         if let Some(p) = &entry.path {
             paths.push(p.clone());
@@ -100,14 +99,17 @@ impl Stash {
     }
 
     fn interpolate(&self, pattern: &str, facts: &Facts) -> String {
-        // Simple interpolation %{facts.key}
-        // TODO: Use a proper regex or string replacement logic
-        let mut result = pattern.to_string();
-        for (k, v) in &facts.values {
-            let placeholder = format!("%{{facts.{}}}", k);
-            result = result.replace(&placeholder, v);
+        let mut context = tera::Context::new();
+        context.insert("facts", &facts.values);
+
+        let mut tera = self.tera.lock().expect("Failed to lock Tera instance");
+        match tera.render_str(pattern, &context) {
+            Ok(rendered) => rendered,
+            Err(e) => {
+                warn!("Tera interpolation error for pattern '{}': {}", pattern, e);
+                pattern.to_string()
+            }
         }
-        result
     }
 
     fn read_yaml_value(&self, path: &PathBuf, key: &str) -> Result<Option<Value>> {
