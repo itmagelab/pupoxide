@@ -53,9 +53,13 @@ async fn test_roles_and_profiles() {
         )
         .expect("Test invariant failed");
 
-    let ids: Vec<_> = catalog.resources.iter().map(|r| r.id()).collect();
+    let ids: Vec<_> = catalog
+        .resources()
+        .iter()
+        .map(|r| r.id().to_string())
+        .collect();
 
     // Check presence
-    assert!(ids.contains(&"File[/tmp/profile_common]"));
-    assert!(ids.contains(&"File[/tmp/profile_common]"));
+    assert!(ids.contains(&"File[/tmp/profile_common]".to_string()));
+    assert!(ids.contains(&"File[/tmp/profile_common]".to_string()));
 }

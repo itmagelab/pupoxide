@@ -128,14 +128,14 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             }
 
             // Track resource count before inclusion
-            let start_resource_count = {
-                let resources = lock_or_err(&exec_ctx.resources, "resources")?;
-                resources.len()
+            let start_node_count = {
+                let catalog = lock_or_err(&exec_ctx.catalog, "catalog")?;
+                catalog.graph.node_count()
             };
 
             // Add module start marker
             {
-                let mut resources = lock_or_err(&exec_ctx.resources, "resources")?;
+                let mut catalog = lock_or_err(&exec_ctx.catalog, "catalog")?;
                 let mut dependencies = Vec::new();
                 if let Ok(stack) = exec_ctx.module_stack.lock()
                     && let Some((parent_type, parent_name)) = stack.last()
@@ -143,11 +143,15 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
                     let dep = format!("{:?}Start[{}]", parent_type, parent_name);
                     dependencies.push(dep);
                 }
-                resources.push(Resource::Meta(MetaResource {
+                catalog.add_resource(Resource::Meta(MetaResource {
                     id: handle.start_id.clone(),
                     kind: MetaKind::ModuleStart,
-                    dependencies,
+                    dependencies: dependencies.clone(),
                 }));
+                // Add edges from dependencies
+                for dep in dependencies {
+                    let _ = catalog.add_dependency(&dep, &handle.start_id);
+                }
             }
 
             // Push module to stack
@@ -210,23 +214,37 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             // Check if evaluation succeeded
             let _ = eval_res?;
 
-            // Add module end marker with all internal resources as dependencies
+            // Add module end marker
             {
-                let mut resources = lock_or_err(&exec_ctx.resources, "resources")?;
+                let mut catalog = lock_or_err(&exec_ctx.catalog, "catalog")?;
+
                 let mut end_deps = Vec::new();
-                // Start from start_resource_count + 1 to skip start marker itself (at start_resource_count)
-                for i in (start_resource_count + 1)..resources.len() {
-                    end_deps.push(resources[i].id().to_string());
+
+                let current_count = catalog.graph.node_count();
+                // Collect IDs of resources added between start_node_count and current_count
+                for i in start_node_count..current_count {
+                    let idx = petgraph::graph::NodeIndex::new(i);
+                    if let Some(res) = catalog.graph.node_weight(idx) {
+                        // Skip if it is the start marker (handle.start_id)
+                        if res.id() != handle.start_id {
+                            end_deps.push(res.id().to_string());
+                        }
+                    }
                 }
-                // If no internal resources, depend only on start marker
+
                 if end_deps.is_empty() {
                     end_deps.push(handle.start_id.clone());
                 }
-                resources.push(Resource::Meta(MetaResource {
+
+                catalog.add_resource(Resource::Meta(MetaResource {
                     id: handle.end_id.clone(),
                     kind: MetaKind::ModuleEnd,
-                    dependencies: end_deps,
+                    dependencies: end_deps.clone(),
                 }));
+
+                for dep in end_deps {
+                    let _ = catalog.add_dependency(&dep, &handle.end_id);
+                }
             }
 
             Ok(handle)

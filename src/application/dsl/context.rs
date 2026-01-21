@@ -46,20 +46,18 @@ impl DslContext {
             }
         }
 
-        exec_ctx
-            .resources
+        let mut catalog = exec_ctx
+            .catalog
             .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock resources: {}", e))?
-            .push(resource.clone());
+            .map_err(|e| anyhow::anyhow!("Failed to lock catalog: {}", e))?;
+        catalog.add_resource(resource.clone());
         Ok(resource)
     }
 
     pub fn add_dependency_between_ids(lhs_id: &str, rhs_id: &str) {
         let exec_ctx = Self::get_exec_ctx();
-        if let Some(mut resources) = lock_or_warn(&exec_ctx.resources, "resources")
-            && let Some(res) = resources.iter_mut().find(|r| r.id() == rhs_id)
-        {
-            res.add_dependency(lhs_id.to_string());
+        if let Ok(mut catalog) = exec_ctx.catalog.lock() {
+            let _ = catalog.add_dependency(lhs_id, rhs_id);
         }
     }
 

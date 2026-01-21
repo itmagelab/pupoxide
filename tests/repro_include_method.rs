@@ -31,7 +31,7 @@ async fn test_string_method_include() {
 
     assert!(
         catalog
-            .resources
+            .resources()
             .iter()
             .any(|r| r.id() == "File[/tmp/sub_method]")
     );

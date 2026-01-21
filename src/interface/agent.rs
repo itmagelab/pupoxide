@@ -244,12 +244,17 @@ impl PupoxideAgent {
         info!(fact_count = facts.values.len(), "Collected facts");
 
         // 2. Fetch catalog using mTLS
-        let catalog = self
+        let mut catalog = self
             .fetch_catalog(&cert_path, &key_path, &ca_path, facts)
             .await
             .context("Failed to fetch catalog")?;
 
-        info!(resource_count = catalog.resources.len(), "Received catalog");
+        catalog.rebuild_id_map();
+
+        info!(
+            resource_count = catalog.resources().len(),
+            "Received catalog"
+        );
 
         // 3. Apply changes with rollback support
         let state_dir = std::path::PathBuf::from("/tmp/pupoxide");

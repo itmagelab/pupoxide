@@ -208,7 +208,7 @@ async fn get_catalog(
             ServerError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         })?;
 
-    info!(node = %node, env = %env, resources = catalog.resources.len(), "Catalog generated successfully");
+    info!(node = %node, env = %env, resources = catalog.resources().len(), "Catalog generated successfully");
 
     Ok(Json(catalog))
 }

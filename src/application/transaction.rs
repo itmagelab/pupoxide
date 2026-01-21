@@ -31,7 +31,8 @@ pub async fn execute_transaction(
     let mut reports_order: Vec<String> = Vec::new();
 
     // Initialize maps
-    for resource in &catalog.resources {
+    let resources = catalog.resources();
+    for resource in &resources {
         let id = resource.id().to_string();
         resource_map.insert(id.clone(), resource.clone());
         reports_order.push(id.clone());
@@ -45,17 +46,16 @@ pub async fn execute_transaction(
     }
 
     // 2. Ready queue: resources with 0 pending dependencies
-    let mut ready_queue: VecDeque<String> = catalog
-        .resources
+    let mut ready_queue: VecDeque<String> = resources
         .iter()
         .filter(|r| r.dependencies().is_empty())
         .map(|r| r.id().to_string())
         .collect();
 
-    let (tx, mut rx) = mpsc::channel(catalog.resources.len());
+    let (tx, mut rx) = mpsc::channel(resources.len() + 1);
     let mut running_tasks: usize = 0;
     let mut completed_count = 0;
-    let total_resources = catalog.resources.len();
+    let total_resources = resources.len();
 
     let mut reports: HashMap<String, ResourceReport> = HashMap::new();
     let mut failed_roots: HashSet<String> = HashSet::new();

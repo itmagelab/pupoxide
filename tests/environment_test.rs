@@ -41,7 +41,9 @@ async fn test_environment_loading_and_execution() {
 
     // Should have 2 resources in order: Dir then File
     // ... (omitting unchanged lines in replacement for brevity if possible, but I'll provide full block)
-    let resources = catalog.resources;
+    let resources = catalog
+        .topological_sort()
+        .expect("Failed to sort resources");
     assert_eq!(resources.len(), 2);
     assert!(resources[0].id().contains("_dir"));
     assert_eq!(resources[1].id(), format!("File[{}]", target_file_str));
@@ -96,7 +98,9 @@ async fn test_module_inclusion() {
         .expect("Test invariant failed");
 
     // 4. Verify
-    let resources = catalog.resources;
+    let resources = catalog
+        .topological_sort()
+        .expect("Failed to sort resources");
     // Expected: ModuleStart, File, ModuleEnd
     assert_eq!(resources.len(), 3);
     assert!(
@@ -141,7 +145,7 @@ async fn test_facts_availability_in_rhai() {
     adapter
         .apply(
             catalog
-                .resources
+                .resources()
                 .iter()
                 .find(|r| r.id().contains("facts_result"))
                 .expect("Test invariant failed"),
@@ -191,7 +195,9 @@ async fn test_module_dependency_chain() {
         )
         .expect("Test invariant failed");
 
-    let resources = catalog.resources;
+    let resources = catalog
+        .topological_sort()
+        .expect("Failed to sort resources");
 
     // Check for ModuleStart/End and order
     let end_a_pos = resources

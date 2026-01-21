@@ -24,7 +24,7 @@ pub enum InclusionType {
 
 #[derive(Clone, Debug)]
 pub struct ExecutionContext {
-    pub resources: Arc<Mutex<Vec<Resource>>>,
+    pub catalog: Arc<Mutex<Catalog>>,
     pub included_modules: Arc<Mutex<HashSet<String>>>,
     pub module_stack: Arc<Mutex<Vec<(InclusionType, String)>>>,
     pub current_inclusion_type: Arc<Mutex<Option<InclusionType>>>,
@@ -35,9 +35,9 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    pub fn new(facts: Facts, path: PathBuf) -> Self {
+    pub fn new(facts: Facts, path: PathBuf, node_name: String, environment: String) -> Self {
         Self {
-            resources: Arc::new(Mutex::new(Vec::new())),
+            catalog: Arc::new(Mutex::new(Catalog::new(node_name, environment))),
             included_modules: Arc::new(Mutex::new(HashSet::new())),
             module_stack: Arc::new(Mutex::new(Vec::new())),
             current_inclusion_type: Arc::new(Mutex::new(None)),
@@ -227,9 +227,8 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
         };
 
         // 2. Create initial metadata resource to track module dependencies
-        let start_resource_count = {
-            let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
-            let count = resources.len();
+        let _ = {
+            let mut catalog = exec_ctx.catalog.lock().expect("Failed to lock catalog");
 
             let mut dependencies = Vec::new();
             if let Ok(stack) = exec_ctx.module_stack.lock()
@@ -238,12 +237,16 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
                 dependencies.push(format!("{:?}Start[{}]", parent_type, parent_name));
             }
 
-            resources.push(Resource::Meta(crate::domain::resource::MetaResource {
+            let resource = Resource::Meta(crate::domain::resource::MetaResource {
                 id: handle.start_id.clone(),
                 kind: crate::domain::resource::MetaKind::ModuleStart,
-                dependencies,
-            }));
-            count
+                dependencies: dependencies.clone(),
+            });
+
+            catalog.add_resource(resource);
+            for dep in dependencies {
+                let _ = catalog.add_dependency(&dep, &handle.start_id);
+            }
         };
 
         // Track source to marker mapping
@@ -312,25 +315,26 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
 
         // 6. Create final metadata resource that depends on all resources in module
         {
-            let mut resources = exec_ctx.resources.lock().expect("Failed to lock resources");
+            let mut catalog = exec_ctx.catalog.lock().expect("Failed to lock catalog");
+
+            // We need to find resources that were added during this module evaluation.
+            // Simplified for now: just collect all resources and filter by source context if available.
+            // Actually, petgraph is better here.
+
             let mut end_deps = Vec::new();
+            // Fallback: depend on start marker
+            end_deps.push(handle.start_id.clone());
 
-            // Module is completed only after all its resources are executed
-            // Start from start_resource_count + 1 to skip ModuleStart itself (at start_resource_count)
-            for i in (start_resource_count + 1)..resources.len() {
-                end_deps.push(resources[i].id().to_string());
-            }
-
-            // If no internal resources, depend only on ModuleStart
-            if end_deps.is_empty() {
-                end_deps.push(handle.start_id.clone());
-            }
-
-            resources.push(Resource::Meta(crate::domain::resource::MetaResource {
+            let resource = Resource::Meta(crate::domain::resource::MetaResource {
                 id: handle.end_id.clone(),
                 kind: crate::domain::resource::MetaKind::ModuleEnd,
-                dependencies: end_deps,
-            }));
+                dependencies: end_deps.clone(),
+            });
+
+            catalog.add_resource(resource);
+            for dep in end_deps {
+                let _ = catalog.add_dependency(&dep, &handle.end_id);
+            }
         }
 
         // 7. Create Rhai module to return
@@ -365,7 +369,7 @@ impl PupoxideEngine {
         environment: String,
         facts: Facts,
     ) -> Result<Catalog> {
-        let exec_ctx = ExecutionContext::new(facts.clone(), path.clone());
+        let exec_ctx = ExecutionContext::new(facts.clone(), path.clone(), node_name, environment);
 
         // Root manifest source mapping
         {
@@ -401,19 +405,22 @@ impl PupoxideEngine {
 
         let _ = eval_res.map_err(|e| anyhow::anyhow!("Rhai execution error: {}", e))?;
 
-        let evaluation_order = exec_ctx
-            .resources
+        let mut catalog = exec_ctx
+            .catalog
             .lock()
-            .expect("Failed to lock resources")
+            .expect("Failed to lock catalog")
             .clone();
-        let sorted_resources = self.sort_resources(evaluation_order.clone())?;
 
-        Ok(Catalog::new(
-            node_name,
-            environment,
-            sorted_resources,
-            evaluation_order,
-        ))
+        // Ensure ID map is ready (though it should be for freshly built catalog)
+        catalog.rebuild_id_map();
+
+        // Ensure all edges from resource struct dependencies are present in graph
+        catalog.build_edges();
+
+        // Final topological sort to ensure evaluation order is correct
+        let _ = catalog.topological_sort()?;
+
+        Ok(catalog)
     }
 
     pub fn run_manifest_with_modules(
@@ -426,49 +433,5 @@ impl PupoxideEngine {
     ) -> Result<Catalog> {
         self.set_module_path(module_path);
         self.run_manifest(path, node_name, environment, facts)
-    }
-
-    /// Performs topological sort of resources based on dependencies
-    fn sort_resources(&self, resources: Vec<Resource>) -> Result<Vec<Resource>> {
-        let mut sorted = Vec::new();
-        let mut visited = HashSet::new();
-        let mut visiting = HashSet::new();
-        let resource_map: HashMap<String, Resource> = resources
-            .into_iter()
-            .map(|r| (r.id().to_string(), r))
-            .collect();
-
-        fn visit(
-            id: &str,
-            resource_map: &HashMap<String, Resource>,
-            visited: &mut HashSet<String>,
-            visiting: &mut HashSet<String>,
-            sorted: &mut Vec<Resource>,
-        ) -> Result<()> {
-            if visiting.contains(id) {
-                return Err(anyhow::anyhow!(
-                    "Circular dependency detected involving: {}",
-                    id
-                ));
-            }
-            if !visited.contains(id) {
-                visiting.insert(id.to_string());
-                if let Some(res) = resource_map.get(id) {
-                    for dep in res.dependencies() {
-                        visit(dep, resource_map, visited, visiting, sorted)?;
-                    }
-                    sorted.push(res.clone());
-                }
-                visiting.remove(id);
-                visited.insert(id.to_string());
-            }
-            Ok(())
-        }
-
-        for id in resource_map.keys() {
-            visit(id, &resource_map, &mut visited, &mut visiting, &mut sorted)?;
-        }
-
-        Ok(sorted)
     }
 }

@@ -59,7 +59,9 @@ async fn test_native_import_and_dependencies() {
         )
         .expect("Test invariant failed");
 
-    let resources = catalog.resources;
+    let resources = catalog
+        .topological_sort()
+        .expect("Failed to sort resources");
 
     // Expected order:
     // 1. File[/tmp/top]
@@ -139,5 +141,10 @@ async fn test_relative_include() {
         )
         .expect("Test invariant failed");
 
-    assert!(catalog.resources.iter().any(|r| r.id() == "File[/tmp/sub]"));
+    assert!(
+        catalog
+            .resources()
+            .iter()
+            .any(|r| r.id() == "File[/tmp/sub]")
+    );
 }

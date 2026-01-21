@@ -28,17 +28,15 @@ fn render_ascii(catalog: &Catalog, filter: Option<&[String]>, max_depth: usize) 
     let filter_set: Option<HashSet<String>> = filter.map(|f| f.iter().cloned().collect());
 
     // 1. Build a map of resources for easy lookup
-    let resource_map: HashMap<String, &Resource> = catalog
-        .evaluation_order
-        .iter()
-        .map(|r| (r.id().to_string(), r))
-        .collect();
+    let resources = catalog.resources();
+    let resource_map: HashMap<String, &Resource> =
+        resources.iter().map(|r| (r.id().to_string(), r)).collect();
 
     // 2. Identify children for each parent (ModuleStart)
     let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
     let mut top_level: Vec<String> = Vec::new();
 
-    for resource in &catalog.evaluation_order {
+    for resource in &resources {
         let mut parent_found = false;
         let parent_id = resource
             .dependencies()
@@ -75,17 +73,15 @@ fn render_mermaid(catalog: &Catalog, filter: Option<&[String]>, max_depth: usize
     let filter_set: Option<HashSet<String>> = filter.map(|f| f.iter().cloned().collect());
 
     // 1. Build a map of resources for easy lookup
-    let resource_map: HashMap<String, &Resource> = catalog
-        .evaluation_order
-        .iter()
-        .map(|r| (r.id().to_string(), r))
-        .collect();
+    let resources = catalog.resources();
+    let resource_map: HashMap<String, &Resource> =
+        resources.iter().map(|r| (r.id().to_string(), r)).collect();
 
     // 2. Identify children for each parent (ModuleStart)
     let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
     let mut top_level: Vec<String> = Vec::new();
 
-    for resource in &catalog.evaluation_order {
+    for resource in &resources {
         let mut parent_found = false;
         let parent_id = resource
             .dependencies()
