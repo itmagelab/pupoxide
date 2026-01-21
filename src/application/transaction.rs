@@ -17,7 +17,7 @@ pub async fn execute_transaction(
 
     let mut reports = Vec::new();
 
-    tracing::info!(id = %transaction_id, dry_run = %dry_run, "Starting transaction");
+    tracing::debug!(id = %transaction_id, dry_run = %dry_run, "Starting transaction");
 
     for resource in &catalog.resources {
         // Skip Meta resources
@@ -63,7 +63,7 @@ pub async fn execute_transaction(
                 ResourceStatus::WouldApply,
                 true,
             ));
-            tracing::info!(id = %resource.id(), "Would ensure resource");
+            tracing::debug!(id = %resource.id(), "Would ensure resource");
             continue;
         }
 
@@ -88,6 +88,6 @@ pub async fn execute_transaction(
     if !dry_run {
         state_store.save_transaction(&transaction)?;
     }
-    tracing::info!(id = %transaction_id, "Transaction completed");
+    tracing::debug!(id = %transaction_id, "Transaction completed");
     Ok(reports)
 }
