@@ -21,6 +21,8 @@ pub async fn execute_transaction(
     tracing::debug!(id = %transaction_id, dry_run = %dry_run, "Starting transaction");
 
     for resource in &catalog.resources {
+        let start_time = std::time::Instant::now();
+
         // Skip Meta resources
         if let crate::domain::resource::Resource::Meta(_) = resource {
             continue;
@@ -51,7 +53,8 @@ pub async fn execute_transaction(
 
         if is_already_correct {
             let report =
-                ResourceReport::new(resource.id().to_string(), ResourceStatus::Unchanged, false);
+                ResourceReport::new(resource.id().to_string(), ResourceStatus::Unchanged, false)
+                    .with_duration(start_time.elapsed());
             on_report(&report);
             reports.push(report);
             continue;
@@ -59,7 +62,8 @@ pub async fn execute_transaction(
 
         if dry_run {
             let report =
-                ResourceReport::new(resource.id().to_string(), ResourceStatus::WouldApply, true);
+                ResourceReport::new(resource.id().to_string(), ResourceStatus::WouldApply, true)
+                    .with_duration(start_time.elapsed());
             on_report(&report);
             reports.push(report);
             tracing::debug!(id = %resource.id(), "Would ensure resource");
@@ -70,7 +74,8 @@ pub async fn execute_transaction(
         if let Err(e) = provider.apply(resource).await {
             let report =
                 ResourceReport::new(resource.id().to_string(), ResourceStatus::Failed, false)
-                    .with_message(e.to_string());
+                    .with_message(e.to_string())
+                    .with_duration(start_time.elapsed());
             on_report(&report);
             reports.push(report);
             tracing::error!(id = %resource.id(), error = %e, "Failed to apply resource");
@@ -78,7 +83,8 @@ pub async fn execute_transaction(
             return Ok(reports); // Return what we have so far
         } else {
             let report =
-                ResourceReport::new(resource.id().to_string(), ResourceStatus::Applied, true);
+                ResourceReport::new(resource.id().to_string(), ResourceStatus::Applied, true)
+                    .with_duration(start_time.elapsed());
             on_report(&report);
             reports.push(report);
         }

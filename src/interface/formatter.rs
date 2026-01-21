@@ -19,7 +19,20 @@ impl PrettyFormatter {
         };
 
         let padding = ".".repeat(60_usize.saturating_sub(report.resource_id.len() + 12));
-        let mut line = format!("{} {} [{}]", report.resource_id, padding, status_str);
+        let duration_ms = report.duration.as_millis();
+        let duration_str = if duration_ms < 1000 {
+            format!("({}ms)", duration_ms)
+        } else {
+            format!("({:.2}s)", report.duration.as_secs_f64())
+        };
+
+        let mut line = format!(
+            "{} {} [{}] {}",
+            report.resource_id,
+            padding,
+            status_str,
+            duration_str.dimmed()
+        );
 
         if let Some(msg) = &report.message {
             line.push_str(&format!("\n   {}", msg.red()));
