@@ -7,6 +7,7 @@ pub mod composition;
 pub mod operators;
 pub mod resources;
 pub mod stash;
+pub mod stdlib;
 pub mod types;
 pub mod utils;
 
@@ -20,4 +21,5 @@ pub fn register_all(
     operators::register(engine);
     composition::register(engine, module_path);
     resources::register(engine);
+    stdlib::register(engine);
 }

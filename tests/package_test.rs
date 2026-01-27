@@ -9,8 +9,8 @@ async fn test_package_resource_compilation() {
     let facts = Facter::collect();
 
     let manifest = r#"
-        pkg_resource("htop", #{ ensure: "present" });
-        pkg_resource("wget", #{ ensure: "present", provider: "brew" });
+        stdlib::pkg("htop", #{ ensure: "present" });
+        stdlib::pkg("wget", #{ ensure: "present", provider: "brew" });
     "#;
 
     let dir = tempdir().unwrap();
@@ -58,7 +58,7 @@ async fn test_package_provider_mapping() {
     let mut facts = pupoxide::domain::Facts::new();
     facts.insert("os_family".to_string(), "Ubuntu".to_string());
 
-    let manifest = r#"pkg_resource("vim", #{})"#;
+    let manifest = r#"stdlib::pkg("vim", #{})"#;
 
     let dir = tempdir().unwrap();
     let temp_file = dir.path().join("manifest.rhai");

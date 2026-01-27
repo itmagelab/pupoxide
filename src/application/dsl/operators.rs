@@ -44,7 +44,8 @@ pub fn register(engine: &mut Engine) {
         "->",
         move |lhs: rhai::Shared<rhai::Module>, rhs: rhai::Shared<rhai::Module>| {
             if let (Some(lhs_h), Some(rhs_h)) = (get_module_handle(&lhs), get_module_handle(&rhs)) {
-                ExecutionContext::get_current().add_dependency_between_ids(&lhs_h.end_id, &rhs_h.start_id);
+                ExecutionContext::get_current()
+                    .add_dependency_between_ids(&lhs_h.end_id, &rhs_h.start_id);
             }
             rhs
         },
@@ -66,7 +67,8 @@ pub fn register(engine: &mut Engine) {
         "->",
         move |lhs: Resource, rhs: rhai::Shared<rhai::Module>| {
             if let Some(rhs_h) = get_module_handle(&rhs) {
-                ExecutionContext::get_current().add_dependency_between_ids(lhs.id(), &rhs_h.start_id);
+                ExecutionContext::get_current()
+                    .add_dependency_between_ids(lhs.id(), &rhs_h.start_id);
             }
             rhs
         },

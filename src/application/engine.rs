@@ -93,7 +93,8 @@ impl ExecutionContext {
                 .current_inclusion_type
                 .lock()
                 .map_err(|e| anyhow::anyhow!("Failed to lock current inclusion type: {}", e))?;
-            if *current_type == Some(InclusionType::Role) && !matches!(resource, Resource::Meta(_)) {
+            if *current_type == Some(InclusionType::Role) && !matches!(resource, Resource::Meta(_))
+            {
                 return Err(anyhow::anyhow!(
                     "Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.",
                     resource.id()
@@ -177,8 +178,8 @@ impl PupoxideEngineBuilder {
     }
 
     pub fn register_defaults(mut self) -> Self {
-        let stash_arc = Arc::new(self.stash.clone());
-        dsl::register_all(&mut self.engine, stash_arc, self.module_path.clone());
+        let stash = Arc::new(self.stash.clone());
+        dsl::register_all(&mut self.engine, stash, self.module_path.clone());
         self
     }
 

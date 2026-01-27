@@ -12,7 +12,7 @@ fn pkg(name, params) {
 
     let ensure = if "ensure" in params { params.ensure } else { "present" };
 
-    pkg_resource(name, #{
+    stdlib::pkg(name, #{
         ensure: ensure
     });
 }
