@@ -1,5 +1,4 @@
-use super::context::DslContext;
-use crate::application::engine::ModuleHandle;
+use crate::application::engine::{ExecutionContext, ModuleHandle};
 use crate::domain::resource::Resource;
 use rhai::Engine;
 
@@ -18,25 +17,25 @@ pub fn register(engine: &mut Engine) {
 
     // Resource -> Resource
     engine.register_fn("->", move |lhs: Resource, rhs: Resource| {
-        DslContext::add_dependency_between_ids(lhs.id(), rhs.id());
+        ExecutionContext::get_current().add_dependency_between_ids(lhs.id(), rhs.id());
         rhs
     });
 
     // ModuleHandle -> ModuleHandle
     engine.register_fn("->", move |lhs: ModuleHandle, rhs: ModuleHandle| {
-        DslContext::add_dependency_between_ids(&lhs.end_id, &rhs.start_id);
+        ExecutionContext::get_current().add_dependency_between_ids(&lhs.end_id, &rhs.start_id);
         rhs
     });
 
     // Resource -> ModuleHandle
     engine.register_fn("->", move |lhs: Resource, rhs: ModuleHandle| {
-        DslContext::add_dependency_between_ids(lhs.id(), &rhs.start_id);
+        ExecutionContext::get_current().add_dependency_between_ids(lhs.id(), &rhs.start_id);
         rhs
     });
 
     // ModuleHandle -> Resource
     engine.register_fn("->", move |lhs: ModuleHandle, rhs: Resource| {
-        DslContext::add_dependency_between_ids(&lhs.end_id, rhs.id());
+        ExecutionContext::get_current().add_dependency_between_ids(&lhs.end_id, rhs.id());
         rhs
     });
 
@@ -45,7 +44,7 @@ pub fn register(engine: &mut Engine) {
         "->",
         move |lhs: rhai::Shared<rhai::Module>, rhs: rhai::Shared<rhai::Module>| {
             if let (Some(lhs_h), Some(rhs_h)) = (get_module_handle(&lhs), get_module_handle(&rhs)) {
-                DslContext::add_dependency_between_ids(&lhs_h.end_id, &rhs_h.start_id);
+                ExecutionContext::get_current().add_dependency_between_ids(&lhs_h.end_id, &rhs_h.start_id);
             }
             rhs
         },
@@ -56,7 +55,7 @@ pub fn register(engine: &mut Engine) {
         "->",
         move |lhs: rhai::Shared<rhai::Module>, rhs: Resource| {
             if let Some(lhs_h) = get_module_handle(&lhs) {
-                DslContext::add_dependency_between_ids(&lhs_h.end_id, rhs.id());
+                ExecutionContext::get_current().add_dependency_between_ids(&lhs_h.end_id, rhs.id());
             }
             rhs
         },
@@ -67,7 +66,7 @@ pub fn register(engine: &mut Engine) {
         "->",
         move |lhs: Resource, rhs: rhai::Shared<rhai::Module>| {
             if let Some(rhs_h) = get_module_handle(&rhs) {
-                DslContext::add_dependency_between_ids(lhs.id(), &rhs_h.start_id);
+                ExecutionContext::get_current().add_dependency_between_ids(lhs.id(), &rhs_h.start_id);
             }
             rhs
         },

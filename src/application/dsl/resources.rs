@@ -1,4 +1,4 @@
-use super::context::DslContext;
+use super::utils::DslUtils;
 use crate::application::engine::ExecutionContext;
 use crate::domain::resource::{ExecResource, FileResource, PackageResource, Resource};
 use rhai::{Engine, Map, NativeCallContext};
@@ -34,22 +34,21 @@ pub fn register(engine: &mut Engine) {
               params: Map|
               -> std::result::Result<Resource, Box<rhai::EvalAltResult>> {
             let exec_ctx = ExecutionContext::get_current();
-            let ensure = DslContext::extract_ensure(&params);
-            let dependencies =
-                DslContext::extract_dependencies(&params, &exec_ctx, ctx.call_source());
+            let ensure = DslUtils::extract_ensure(&params);
+            let dependencies = DslUtils::extract_dependencies(&params, &exec_ctx, ctx.call_source());
             let resource = Resource::Directory(crate::domain::resource::DirectoryResource {
                 id: format!("Directory[{}]", path),
                 path: PathBuf::from(path),
                 ensure,
                 dependencies,
-                owner: DslContext::extract_string(&params, "owner"),
-                group: DslContext::extract_string(&params, "group"),
-                mode: DslContext::extract_string(&params, "mode"),
-                mutex: DslContext::extract_string(&params, "mutex"),
+                owner: DslUtils::extract_string(&params, "owner"),
+                group: DslUtils::extract_string(&params, "group"),
+                mode: DslUtils::extract_string(&params, "mode"),
+                mutex: DslUtils::extract_string(&params, "mutex"),
                 source_context: exec_ctx.get_source_context(),
             });
 
-            DslContext::add_resource(&exec_ctx, resource).map_err(to_rhai_error)
+            exec_ctx.add_resource(resource).map_err(to_rhai_error)
         },
     );
 
@@ -61,13 +60,12 @@ pub fn register(engine: &mut Engine) {
               params: Map|
               -> std::result::Result<Resource, Box<rhai::EvalAltResult>> {
             let exec_ctx = ExecutionContext::get_current();
-            let dependencies =
-                DslContext::extract_dependencies(&params, &exec_ctx, ctx.call_source());
+            let dependencies = DslUtils::extract_dependencies(&params, &exec_ctx, ctx.call_source());
 
-            let creates = DslContext::extract_string(&params, "creates").map(PathBuf::from);
-            let unless = DslContext::extract_string(&params, "unless");
-            let cwd = DslContext::extract_string(&params, "cwd").map(PathBuf::from);
-            let command = DslContext::extract_string(&params, "command")
+            let creates = DslUtils::extract_string(&params, "creates").map(PathBuf::from);
+            let unless = DslUtils::extract_string(&params, "unless");
+            let cwd = DslUtils::extract_string(&params, "cwd").map(PathBuf::from);
+            let command = DslUtils::extract_string(&params, "command")
                 .unwrap_or_else(|| id_or_command.clone());
 
             let resource = Resource::Exec(ExecResource {
@@ -78,11 +76,11 @@ pub fn register(engine: &mut Engine) {
                 cwd,
                 environment: extract_environment(&params),
                 dependencies,
-                mutex: DslContext::extract_string(&params, "mutex"),
+                mutex: DslUtils::extract_string(&params, "mutex"),
                 source_context: exec_ctx.get_source_context(),
             });
 
-            DslContext::add_resource(&exec_ctx, resource).map_err(to_rhai_error)
+            exec_ctx.add_resource(resource).map_err(to_rhai_error)
         },
     );
 
@@ -94,10 +92,9 @@ pub fn register(engine: &mut Engine) {
               params: Map|
               -> std::result::Result<Resource, Box<rhai::EvalAltResult>> {
             let exec_ctx = ExecutionContext::get_current();
-            let ensure = DslContext::extract_ensure(&params);
-            let dependencies =
-                DslContext::extract_dependencies(&params, &exec_ctx, ctx.call_source());
-            let content = DslContext::extract_string(&params, "content");
+            let ensure = DslUtils::extract_ensure(&params);
+            let dependencies = DslUtils::extract_dependencies(&params, &exec_ctx, ctx.call_source());
+            let content = DslUtils::extract_string(&params, "content");
 
             let resource = Resource::File(FileResource {
                 id: format!("File[{}]", path),
@@ -105,14 +102,14 @@ pub fn register(engine: &mut Engine) {
                 ensure,
                 content,
                 dependencies,
-                owner: DslContext::extract_string(&params, "owner"),
-                group: DslContext::extract_string(&params, "group"),
-                mode: DslContext::extract_string(&params, "mode"),
-                mutex: DslContext::extract_string(&params, "mutex"),
+                owner: DslUtils::extract_string(&params, "owner"),
+                group: DslUtils::extract_string(&params, "group"),
+                mode: DslUtils::extract_string(&params, "mode"),
+                mutex: DslUtils::extract_string(&params, "mutex"),
                 source_context: exec_ctx.get_source_context(),
             });
 
-            DslContext::add_resource(&exec_ctx, resource).map_err(to_rhai_error)
+            exec_ctx.add_resource(resource).map_err(to_rhai_error)
         },
     );
 
@@ -124,15 +121,14 @@ pub fn register(engine: &mut Engine) {
               params: Map|
               -> std::result::Result<Resource, Box<rhai::EvalAltResult>> {
             let exec_ctx = ExecutionContext::get_current();
-            let ensure = DslContext::extract_ensure(&params);
-            let dependencies =
-                DslContext::extract_dependencies(&params, &exec_ctx, ctx.call_source());
-            let provider = DslContext::extract_string(&params, "provider")
-                .unwrap_or_else(|| DslContext::get_default_provider(&exec_ctx));
+            let ensure = DslUtils::extract_ensure(&params);
+            let dependencies = DslUtils::extract_dependencies(&params, &exec_ctx, ctx.call_source());
+            let provider = DslUtils::extract_string(&params, "provider")
+                .unwrap_or_else(|| exec_ctx.get_default_provider());
 
             // Automatic mutex based on provider
             let mutex =
-                DslContext::extract_string(&params, "mutex").unwrap_or_else(|| provider.clone());
+                DslUtils::extract_string(&params, "mutex").unwrap_or_else(|| provider.clone());
 
             let resource = Resource::Package(PackageResource {
                 id: format!("Package[{}]", name),
@@ -144,7 +140,7 @@ pub fn register(engine: &mut Engine) {
                 source_context: exec_ctx.get_source_context(),
             });
 
-            DslContext::add_resource(&exec_ctx, resource).map_err(to_rhai_error)
+            exec_ctx.add_resource(resource).map_err(to_rhai_error)
         },
     );
 }

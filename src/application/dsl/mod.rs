@@ -4,11 +4,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub mod composition;
-pub mod context;
 pub mod operators;
 pub mod resources;
 pub mod stash;
 pub mod types;
+pub mod utils;
 
 pub fn register_all(
     engine: &mut Engine,

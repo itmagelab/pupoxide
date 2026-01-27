@@ -1,11 +1,10 @@
-use crate::application::engine::{ExecutionContext, InclusionType, ModuleHandle};
+use crate::application::engine::{ExecutionContext, ModuleHandle};
 use crate::domain::resource::{Ensure, Resource};
-use anyhow::Result;
 use rhai::{Dynamic, Map};
 use tracing::warn;
 
 // Helper to lock a mutex safely or log warning
-fn lock_or_warn<'a, T>(
+pub fn lock_or_warn<'a, T>(
     mutex: &'a std::sync::Mutex<T>,
     label: &str,
 ) -> Option<std::sync::MutexGuard<'a, T>> {
@@ -17,40 +16,9 @@ fn lock_or_warn<'a, T>(
         .ok()
 }
 
-pub struct DslContext;
+pub struct DslUtils;
 
-impl DslContext {
-    pub fn add_resource(exec_ctx: &ExecutionContext, resource: Resource) -> Result<Resource> {
-        // Enforce role constraints: Resources cannot be added directly in Roles
-        {
-            let current_type = exec_ctx
-                .current_inclusion_type
-                .lock()
-                .map_err(|e| anyhow::anyhow!("Failed to lock current inclusion type: {}", e))?;
-            if *current_type == Some(InclusionType::Role) && !matches!(resource, Resource::Meta(_))
-            {
-                return Err(anyhow::anyhow!(
-                    "Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.",
-                    resource.id()
-                ));
-            }
-        }
-
-        let mut catalog = exec_ctx
-            .catalog
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock catalog: {}", e))?;
-        catalog.add_resource(resource.clone());
-        Ok(resource)
-    }
-
-    pub fn add_dependency_between_ids(lhs_id: &str, rhs_id: &str) {
-        let exec_ctx = ExecutionContext::get_current();
-        if let Ok(mut catalog) = exec_ctx.catalog.lock() {
-            let _ = catalog.add_dependency(lhs_id, rhs_id);
-        }
-    }
-
+impl DslUtils {
     pub fn extract_ensure(params: &Map) -> Ensure {
         params
             .get("ensure")
@@ -135,23 +103,5 @@ impl DslContext {
             .get(key)
             .and_then(|v| v.clone().try_cast::<bool>())
             .unwrap_or(default)
-    }
-
-    pub fn get_default_provider(exec_ctx: &ExecutionContext) -> String {
-        let facts = &exec_ctx.facts;
-        let os_family = facts
-            .get("os_family")
-            .map(|s| s.as_str())
-            .unwrap_or("unknown");
-
-        match os_family {
-            "Darwin" | "macOS" => "brew".to_string(),
-            "Ubuntu" | "Debian" => "apt".to_string(),
-            "Linux" => {
-                // Try to be more specific if possible, though os_family usually is the name on sysinfo
-                "apt".to_string() // Default to apt for Linux if unknown distribution
-            }
-            _ => "brew".to_string(), // Fallback to brew as requested by current context
-        }
     }
 }

@@ -85,6 +85,50 @@ impl ExecutionContext {
             Some(context)
         }
     }
+
+    pub fn add_resource(&self, resource: Resource) -> Result<Resource> {
+        // Enforce role constraints: Resources cannot be added directly in Roles
+        {
+            let current_type = self
+                .current_inclusion_type
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Failed to lock current inclusion type: {}", e))?;
+            if *current_type == Some(InclusionType::Role) && !matches!(resource, Resource::Meta(_)) {
+                return Err(anyhow::anyhow!(
+                    "Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.",
+                    resource.id()
+                ));
+            }
+        }
+
+        let mut catalog = self
+            .catalog
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to lock catalog: {}", e))?;
+        catalog.add_resource(resource.clone());
+        Ok(resource)
+    }
+
+    pub fn add_dependency_between_ids(&self, lhs_id: &str, rhs_id: &str) {
+        if let Ok(mut catalog) = self.catalog.lock() {
+            let _ = catalog.add_dependency(lhs_id, rhs_id);
+        }
+    }
+
+    pub fn get_default_provider(&self) -> String {
+        let os_family = self
+            .facts
+            .get("os_family")
+            .map(|s| s.as_str())
+            .unwrap_or("unknown");
+
+        match os_family {
+            "Darwin" | "macOS" => "brew".to_string(),
+            "Ubuntu" | "Debian" => "apt".to_string(),
+            "Linux" => "apt".to_string(),
+            _ => "brew".to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

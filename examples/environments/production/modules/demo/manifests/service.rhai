@@ -1,1 +1,3 @@
-exec("touch /tmp/pupoxide/demo/.demo.pid", #{ creates: "/tmp/pupoxide/demo/.demo.pid" });
+let pid = "/tmp/pupoxide/demo/.demo.pid";
+
+exec(`touch ${pid}`, #{ creates: pid });
