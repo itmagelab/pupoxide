@@ -8,6 +8,112 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 
+struct ExecutionGraph {
+    resource_map: HashMap<String, Resource>,
+    dependents: HashMap<String, Vec<String>>,
+    pending_deps: HashMap<String, usize>,
+    reports_order: Vec<String>,
+}
+
+impl ExecutionGraph {
+    fn new(catalog: &Catalog) -> Self {
+        let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pending_deps: HashMap<String, usize> = HashMap::new();
+        let mut resource_map: HashMap<String, Resource> = HashMap::new();
+        let mut reports_order: Vec<String> = Vec::new();
+
+        let resources = catalog.resources();
+        for resource in &resources {
+            let id = resource.id().to_string();
+            resource_map.insert(id.clone(), resource.clone());
+            reports_order.push(id.clone());
+
+            let deps = resource.dependencies();
+            pending_deps.insert(id.clone(), deps.len());
+
+            for dep in deps {
+                dependents.entry(dep.clone()).or_default().push(id.clone());
+            }
+        }
+
+        Self {
+            resource_map,
+            dependents,
+            pending_deps,
+            reports_order,
+        }
+    }
+
+    fn get_ready_resources(&self) -> VecDeque<String> {
+        self.reports_order
+            .iter()
+            .filter(|id| self.pending_deps.get(*id) == Some(&0))
+            .cloned()
+            .collect()
+    }
+
+    fn update_dependents(&mut self, res_id: &str) -> Vec<String> {
+        let mut newly_ready = Vec::new();
+        if let Some(deps) = self.dependents.get(res_id) {
+            for dependent_id in deps {
+                if let Some(count) = self.pending_deps.get_mut(dependent_id) {
+                    *count -= 1;
+                    if *count == 0 {
+                        newly_ready.push(dependent_id.clone());
+                    }
+                }
+            }
+        }
+        newly_ready
+    }
+}
+
+struct ExecutionState {
+    reports: HashMap<String, ResourceReport>,
+    failed_roots: HashSet<String>,
+    completed_count: usize,
+    running_tasks: usize,
+}
+
+impl ExecutionState {
+    fn new() -> Self {
+        Self {
+            reports: HashMap::new(),
+            failed_roots: HashSet::new(),
+            completed_count: 0,
+            running_tasks: 0,
+        }
+    }
+
+    fn is_dependency_failed(&self, resource: &Resource) -> Option<String> {
+        let failed_deps: Vec<_> = resource
+            .dependencies()
+            .iter()
+            .filter(|d| self.failed_roots.contains(*d))
+            .cloned()
+            .collect();
+
+        if failed_deps.is_empty() {
+            None
+        } else if failed_deps.len() == 1 {
+            Some(format!("Dependency failed: {}", failed_deps[0]))
+        } else {
+            Some(format!(
+                "Dependencies failed: {}",
+                failed_deps.join(", ")
+            ))
+        }
+    }
+
+    fn record_completion(&mut self, res_id: String, report: ResourceReport) {
+        if report.status == ResourceStatus::Failed {
+            self.failed_roots.insert(res_id.clone());
+        }
+        self.reports.insert(res_id, report);
+        self.completed_count += 1;
+    }
+}
+
 pub async fn execute_transaction(
     catalog: Catalog,
     state_store: &StateStore,
@@ -24,98 +130,53 @@ pub async fn execute_transaction(
     let total_start = std::time::Instant::now();
     tracing::debug!(id = %transaction_id, dry_run = %dry_run, "Starting transaction");
 
-    // 1. Build dependency graph
-    let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
-    let mut pending_deps: HashMap<String, usize> = HashMap::new();
-    let mut resource_map: HashMap<String, Resource> = HashMap::new();
-    let mut reports_order: Vec<String> = Vec::new();
+    let mut graph = ExecutionGraph::new(&catalog);
+    let mut state = ExecutionState::new();
+    let mut ready_queue = graph.get_ready_resources();
+    let total_resources = graph.resource_map.len();
 
-    // Initialize maps
-    let resources = catalog.resources();
-    for resource in &resources {
-        let id = resource.id().to_string();
-        resource_map.insert(id.clone(), resource.clone());
-        reports_order.push(id.clone());
-
-        let deps = resource.dependencies();
-        pending_deps.insert(id.clone(), deps.len());
-
-        for dep in deps {
-            dependents.entry(dep.clone()).or_default().push(id.clone());
-        }
-    }
-
-    // 2. Ready queue: resources with 0 pending dependencies
-    let mut ready_queue: VecDeque<String> = resources
-        .iter()
-        .filter(|r| r.dependencies().is_empty())
-        .map(|r| r.id().to_string())
-        .collect();
-
-    let (tx, mut rx) = mpsc::channel(resources.len() + 1);
-    let mut running_tasks: usize = 0;
-    let mut completed_count = 0;
-    let total_resources = resources.len();
+    let (tx, mut rx) = mpsc::channel(total_resources + 1);
     let mutex_pool: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
-    let mut reports: HashMap<String, ResourceReport> = HashMap::new();
-    let mut failed_roots: HashSet<String> = HashSet::new();
-
-    while completed_count < total_resources {
-        // 1. Spawn tasks for ready resources or process them immediately
+    while state.completed_count < total_resources {
+        // 1. Process ready resources
         while let Some(res_id) = ready_queue.pop_front() {
-            let resource = resource_map
+            let resource = graph
+                .resource_map
                 .get(&res_id)
-                .cloned()
-                .expect("Resource must exist");
+                .expect("Resource must exist")
+                .clone();
 
-            // If any dependency failed, this resource is skipped
-            let failed_deps: Vec<_> = resource
-                .dependencies()
-                .iter()
-                .filter(|d| failed_roots.contains(*d))
-                .cloned()
-                .collect();
-
-            if !failed_deps.is_empty() {
-                failed_roots.insert(res_id.clone());
-                let source_context = get_source_context(&resource);
-                let msg = if failed_deps.len() == 1 {
-                    format!("Dependency failed: {}", failed_deps[0])
-                } else {
-                    format!("Dependencies failed: {}", failed_deps.join(", "))
-                };
-
+            // Check for failed dependencies
+            if let Some(error_msg) = state.is_dependency_failed(&resource) {
                 let report = ResourceReport::new(res_id.clone(), ResourceStatus::Skipped, false)
-                    .with_message(msg)
-                    .with_source_context(source_context);
+                    .with_message(error_msg)
+                    .with_source_context(get_source_context(&resource));
 
-                reports.insert(res_id.clone(), report.clone());
                 on_report(&report);
-                completed_count += 1;
+                state.record_completion(res_id.clone(), report);
+                state.failed_roots.insert(res_id.clone()); // Propagation
 
-                // Update dependents immediately
-                update_dependents(&res_id, &dependents, &mut pending_deps, &mut ready_queue);
+                ready_queue.extend(graph.update_dependents(&res_id));
                 continue;
             }
 
-            // Handle Meta resources immediately - skip reporting
+            // Handle Meta resources immediately
             if let Resource::Meta(_) = resource {
                 let report = ResourceReport::new(res_id.clone(), ResourceStatus::Unchanged, false);
-                reports.insert(res_id.clone(), report);
-                completed_count += 1;
-
-                update_dependents(&res_id, &dependents, &mut pending_deps, &mut ready_queue);
+                state.record_completion(res_id.clone(), report);
+                ready_queue.extend(graph.update_dependents(&res_id));
                 continue;
             }
 
+            // Spawn execution task
             let provider = Arc::clone(&provider);
             let transaction = Arc::clone(&transaction);
             let mutex_pool = Arc::clone(&mutex_pool);
             let tx_clone = tx.clone();
 
-            running_tasks += 1;
+            state.running_tasks += 1;
             tokio::spawn(async move {
                 let mutex_guard = if let Some(mutex_id) = resource.mutex() {
                     let mut pool = mutex_pool.lock().await;
@@ -130,82 +191,45 @@ pub async fn execute_transaction(
                     process_single_resource(resource, provider, transaction, dry_run).await;
                 drop(mutex_guard);
 
-                if let Err(e) = tx_clone.send((res_id.clone(), report)).await {
-                    tracing::error!(id = %res_id, error = %e, "Failed to send report to main thread");
-                }
+                let _ = tx_clone.send((res_id, report)).await;
             });
         }
 
-        if completed_count == total_resources {
+        if state.completed_count == total_resources {
             break;
         }
 
-        if running_tasks == 0 && ready_queue.is_empty() {
-            // Safety break for cycles or unhandled cases
-            break;
+        if state.running_tasks == 0 && ready_queue.is_empty() {
+            break; // Potential cycle or deadlock
         }
 
         // 2. Wait for a task to complete
         if let Some((res_id, report)) = rx.recv().await {
-            completed_count += 1;
-            running_tasks = running_tasks.saturating_sub(1);
-
-            if report.status == ResourceStatus::Failed {
-                failed_roots.insert(res_id.clone());
-            }
-
+            state.running_tasks -= 1;
             on_report(&report);
-            reports.insert(res_id.clone(), report);
+            state.record_completion(res_id.clone(), report);
 
-            // Update dependents
-            update_dependents(&res_id, &dependents, &mut pending_deps, &mut ready_queue);
+            ready_queue.extend(graph.update_dependents(&res_id));
         }
     }
 
-    // Double check for any missed resources
-    for id in reports_order.iter() {
-        if !reports.contains_key(id) {
-            let resource = resource_map.get(id).expect("Exists");
-            let source_context = get_source_context(resource);
-
-            // Check if it was supposed to be skipped due to a failed parent
-            let failed_deps: Vec<_> = resource
-                .dependencies()
-                .iter()
-                .filter(|d| failed_roots.contains(*d))
-                .cloned()
-                .collect();
-
-            let msg = if !failed_deps.is_empty() {
-                if failed_deps.len() == 1 {
-                    format!("Dependency failed: {}", failed_deps[0])
-                } else {
-                    format!("Dependencies failed: {}", failed_deps.join(", "))
-                }
-            } else {
-                "Dependency cycle or unhandled state".to_string()
-            };
-
+    // Double check for any missed resources (cycle protection)
+    for id in &graph.reports_order {
+        if !state.reports.contains_key(id) {
+            let resource = graph.resource_map.get(id).expect("Exists");
             let report = ResourceReport::new(id.clone(), ResourceStatus::Skipped, false)
-                .with_message(msg)
-                .with_source_context(source_context);
-            reports.insert(id.clone(), report);
+                .with_message("Dependency cycle or unhandled state".to_string())
+                .with_source_context(get_source_context(resource));
+            state.reports.insert(id.clone(), report);
         }
     }
 
-    // Filter out Meta resources from the final reports list
-    let final_reports: Vec<ResourceReport> = reports_order
+    // Filter and prepare final reports
+    let final_reports: Vec<ResourceReport> = graph
+        .reports_order
         .iter()
-        .filter(|id| {
-            let res = resource_map.get(*id).expect("Exists");
-            !matches!(res, Resource::Meta(_))
-        })
-        .map(|id| {
-            reports
-                .get(id)
-                .cloned()
-                .expect("All resources must have reports")
-        })
+        .filter(|id| !matches!(graph.resource_map.get(*id), Some(Resource::Meta(_))))
+        .filter_map(|id| state.reports.get(id).cloned())
         .collect();
 
     if !dry_run {
@@ -218,25 +242,8 @@ pub async fn execute_transaction(
         &final_reports,
         total_start.elapsed(),
     );
-    Ok(final_reports)
-}
 
-fn update_dependents(
-    res_id: &str,
-    dependents: &HashMap<String, Vec<String>>,
-    pending_deps: &mut HashMap<String, usize>,
-    ready_queue: &mut VecDeque<String>,
-) {
-    if let Some(deps) = dependents.get(res_id) {
-        for dependent_id in deps {
-            if let Some(count) = pending_deps.get_mut(dependent_id) {
-                *count -= 1;
-                if *count == 0 {
-                    ready_queue.push_back(dependent_id.clone());
-                }
-            }
-        }
-    }
+    Ok(final_reports)
 }
 
 async fn process_single_resource(
