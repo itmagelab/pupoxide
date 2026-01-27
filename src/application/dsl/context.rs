@@ -1,4 +1,4 @@
-use crate::application::engine::{CURRENT_EXEC_CTX, ExecutionContext, InclusionType, ModuleHandle};
+use crate::application::engine::{ExecutionContext, InclusionType, ModuleHandle};
 use crate::domain::resource::{Ensure, Resource};
 use anyhow::Result;
 use rhai::{Dynamic, Map};
@@ -20,16 +20,6 @@ fn lock_or_warn<'a, T>(
 pub struct DslContext;
 
 impl DslContext {
-    pub fn get_exec_ctx() -> ExecutionContext {
-        CURRENT_EXEC_CTX.with(|ctx| {
-            ctx.borrow()
-                .clone()
-                // SAFETY: Execution context must be set during Rhai evaluation.
-                // This is ensured by the engine's run_manifest method.
-                .expect("Execution context must be set during Rhai evaluation")
-        })
-    }
-
     pub fn add_resource(exec_ctx: &ExecutionContext, resource: Resource) -> Result<Resource> {
         // Enforce role constraints: Resources cannot be added directly in Roles
         {
@@ -55,7 +45,7 @@ impl DslContext {
     }
 
     pub fn add_dependency_between_ids(lhs_id: &str, rhs_id: &str) {
-        let exec_ctx = Self::get_exec_ctx();
+        let exec_ctx = ExecutionContext::get_current();
         if let Ok(mut catalog) = exec_ctx.catalog.lock() {
             let _ = catalog.add_dependency(lhs_id, rhs_id);
         }
@@ -78,14 +68,14 @@ impl DslContext {
 
     pub fn extract_dependencies(
         params: &Map,
-        exec_ctx: &ExecutionContext,
+        ctx: &ExecutionContext,
         source: Option<&str>,
     ) -> Vec<String> {
         let mut dependencies = Vec::new();
 
         // 1. Parent attribution based on Rhai source
         if let Some(src) = source {
-            let s_map = exec_ctx
+            let s_map = ctx
                 .source_map
                 .lock()
                 // SAFETY: Lock failure indicates a poisoned mutex, which is a fatal error.
@@ -94,12 +84,12 @@ impl DslContext {
             // Try specific source mapping, then fallback to current module stack
             if let Some(marker_id) = s_map.get(src) {
                 dependencies.push(marker_id.clone());
-            } else if let Some(stack_guard) = lock_or_warn(&exec_ctx.module_stack, "module_stack")
+            } else if let Some(stack_guard) = lock_or_warn(&ctx.module_stack, "module_stack")
                 && let Some((inc_type, curr_mod)) = stack_guard.last()
             {
                 dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
             }
-        } else if let Some(stack_guard) = lock_or_warn(&exec_ctx.module_stack, "module_stack") {
+        } else if let Some(stack_guard) = lock_or_warn(&ctx.module_stack, "module_stack") {
             // General fallback if no source provided
             if let Some((inc_type, curr_mod)) = stack_guard.last() {
                 dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
@@ -145,5 +135,23 @@ impl DslContext {
             .get(key)
             .and_then(|v| v.clone().try_cast::<bool>())
             .unwrap_or(default)
+    }
+
+    pub fn get_default_provider(exec_ctx: &ExecutionContext) -> String {
+        let facts = &exec_ctx.facts;
+        let os_family = facts
+            .get("os_family")
+            .map(|s| s.as_str())
+            .unwrap_or("unknown");
+
+        match os_family {
+            "Darwin" | "macOS" => "brew".to_string(),
+            "Ubuntu" | "Debian" => "apt".to_string(),
+            "Linux" => {
+                // Try to be more specific if possible, though os_family usually is the name on sysinfo
+                "apt".to_string() // Default to apt for Linux if unknown distribution
+            }
+            _ => "brew".to_string(), // Fallback to brew as requested by current context
+        }
     }
 }

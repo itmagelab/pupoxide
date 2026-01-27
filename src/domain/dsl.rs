@@ -18,6 +18,7 @@ macro_rules! file {
             group: None,
             mode: None,
             source_context: None,
+            mutex: None,
         })
     };
     ($path:expr => { ensure: $ensure:expr }) => {
@@ -31,6 +32,7 @@ macro_rules! file {
             group: None,
             mode: None,
             source_context: None,
+            mutex: None,
         })
     };
 }

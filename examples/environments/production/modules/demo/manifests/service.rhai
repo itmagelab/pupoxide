@@ -1,1 +1,1 @@
-exec("touch /tmp/demo/.demo.pid", #{ creates: "/tmp/demo/.demo.pid" });
+exec("touch /tmp/pupoxide/demo/.demo.pid", #{ creates: "/tmp/pupoxide/demo/.demo.pid" });

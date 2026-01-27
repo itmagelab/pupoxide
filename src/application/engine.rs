@@ -47,6 +47,16 @@ impl ExecutionContext {
         }
     }
 
+    pub fn get_current() -> Self {
+        CURRENT_EXEC_CTX.with(|ctx| {
+            ctx.borrow()
+                .clone()
+                // SAFETY: Execution context must be set during Rhai evaluation.
+                // This is ensured by the engine's run_manifest method.
+                .expect("Execution context must be set during Rhai evaluation")
+        })
+    }
+
     pub fn get_source_context(&self) -> Option<crate::domain::resource::SourceContext> {
         let stack = self.module_stack.lock().ok()?;
         let mut context = crate::domain::resource::SourceContext::default();

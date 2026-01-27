@@ -264,6 +264,9 @@ impl PupoxideAgent {
         let mut provider_registry = crate::application::ProviderRegistry::new();
         provider_registry.register(std::sync::Arc::new(crate::infrastructure::FsAdapter));
         provider_registry.register(std::sync::Arc::new(crate::infrastructure::ExecAdapter));
+        provider_registry.register(std::sync::Arc::new(
+            crate::infrastructure::PackageAdapter::default(),
+        ));
         let provider = std::sync::Arc::new(provider_registry);
 
         crate::interface::formatter::PrettyFormatter::print_header();

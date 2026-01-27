@@ -20,6 +20,7 @@ pub async fn handle_run(
     let mut provider_registry = ProviderRegistry::new();
     provider_registry.register(Arc::new(crate::infrastructure::FsAdapter));
     provider_registry.register(Arc::new(crate::infrastructure::ExecAdapter));
+    provider_registry.register(Arc::new(crate::infrastructure::PackageAdapter::default()));
     let provider = Arc::new(provider_registry);
 
     let engine = PupoxideEngine::new(None);
@@ -57,6 +58,7 @@ pub async fn handle_apply(
     let mut provider_registry = ProviderRegistry::new();
     provider_registry.register(Arc::new(crate::infrastructure::FsAdapter));
     provider_registry.register(Arc::new(crate::infrastructure::ExecAdapter));
+    provider_registry.register(Arc::new(crate::infrastructure::PackageAdapter::default()));
     let provider = Arc::new(provider_registry);
 
     let loader = EnvironmentLoader::new(config);

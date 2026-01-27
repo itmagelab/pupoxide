@@ -56,6 +56,8 @@ pub async fn execute_transaction(
     let mut running_tasks: usize = 0;
     let mut completed_count = 0;
     let total_resources = resources.len();
+    let mutex_pool: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
     let mut reports: HashMap<String, ResourceReport> = HashMap::new();
     let mut failed_roots: HashSet<String> = HashSet::new();
@@ -110,12 +112,24 @@ pub async fn execute_transaction(
 
             let provider = Arc::clone(&provider);
             let transaction = Arc::clone(&transaction);
+            let mutex_pool = Arc::clone(&mutex_pool);
             let tx_clone = tx.clone();
 
             running_tasks += 1;
             tokio::spawn(async move {
+                let mutex_guard = if let Some(mutex_id) = resource.mutex() {
+                    let mut pool = mutex_pool.lock().await;
+                    let m = pool.entry(mutex_id.to_string()).or_default().clone();
+                    drop(pool);
+                    Some(m.lock_owned().await)
+                } else {
+                    None
+                };
+
                 let report =
                     process_single_resource(resource, provider, transaction, dry_run).await;
+                drop(mutex_guard);
+
                 if let Err(e) = tx_clone.send((res_id.clone(), report)).await {
                     tracing::error!(id = %res_id, error = %e, "Failed to send report to main thread");
                 }
@@ -258,6 +272,7 @@ async fn process_single_resource(
         (Resource::File(f), ResourceState::Ensure(e)) => f.ensure == *e,
         (Resource::File(f), ResourceState::Full { ensure, .. }) => f.ensure == *ensure,
         (Resource::Directory(d), ResourceState::Ensure(e)) => d.ensure == *e,
+        (Resource::Package(p), ResourceState::Ensure(e)) => p.ensure == *e,
         (Resource::Exec(_), ResourceState::Ensure(e)) => *e == Ensure::Present,
         _ => false,
     };
@@ -295,6 +310,7 @@ fn get_source_context(resource: &Resource) -> Option<crate::domain::resource::So
         Resource::File(f) => f.source_context.clone(),
         Resource::Directory(d) => d.source_context.clone(),
         Resource::Exec(e) => e.source_context.clone(),
-        _ => None,
+        Resource::Package(p) => p.source_context.clone(),
+        Resource::Meta(_) => None,
     }
 }

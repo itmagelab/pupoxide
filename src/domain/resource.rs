@@ -38,6 +38,7 @@ pub struct FileResource {
     pub group: Option<String>,
     pub mode: Option<String>,
     pub source_context: Option<SourceContext>,
+    pub mutex: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -64,6 +65,7 @@ pub struct ExecResource {
     pub environment: Option<std::collections::HashMap<String, String>>,
     pub dependencies: Vec<String>,
     pub source_context: Option<SourceContext>,
+    pub mutex: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, validator::Validate)]
@@ -76,6 +78,18 @@ pub struct DirectoryResource {
     pub group: Option<String>,
     pub mode: Option<String>,
     pub source_context: Option<SourceContext>,
+    pub mutex: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, validator::Validate, PartialEq)]
+pub struct PackageResource {
+    pub id: String,
+    pub name: String,
+    pub ensure: Ensure,
+    pub provider: String,
+    pub dependencies: Vec<String>,
+    pub source_context: Option<SourceContext>,
+    pub mutex: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +98,7 @@ pub enum Resource {
     File(FileResource),
     Directory(DirectoryResource),
     Exec(ExecResource),
+    Package(PackageResource),
     Meta(MetaResource),
 }
 
@@ -93,6 +108,7 @@ impl Resource {
             Resource::File(f) => &f.id,
             Resource::Directory(d) => &d.id,
             Resource::Exec(e) => &e.id,
+            Resource::Package(p) => &p.id,
             Resource::Meta(m) => &m.id,
         }
     }
@@ -102,7 +118,18 @@ impl Resource {
             Resource::File(f) => &f.dependencies,
             Resource::Directory(d) => &d.dependencies,
             Resource::Exec(e) => &e.dependencies,
+            Resource::Package(p) => &p.dependencies,
             Resource::Meta(m) => &m.dependencies,
+        }
+    }
+
+    pub fn mutex(&self) -> Option<&str> {
+        match self {
+            Resource::File(f) => f.mutex.as_deref(),
+            Resource::Directory(d) => d.mutex.as_deref(),
+            Resource::Exec(e) => e.mutex.as_deref(),
+            Resource::Package(p) => p.mutex.as_deref(),
+            Resource::Meta(_) => None,
         }
     }
 
@@ -111,6 +138,7 @@ impl Resource {
             Resource::File(f) => &mut f.dependencies,
             Resource::Directory(d) => &mut d.dependencies,
             Resource::Exec(e) => &mut e.dependencies,
+            Resource::Package(p) => &mut p.dependencies,
             Resource::Meta(m) => &mut m.dependencies,
         };
 

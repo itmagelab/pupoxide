@@ -6,7 +6,7 @@ let app_port = lookup("app_port", 80);
 
 print(`Configuring ${app_name} on port ${app_port}`);
 
-file("/tmp/app_config.txt", #{
+file("/tmp/pupoxide/app_config.txt", #{
     ensure: "present",
     content: `App: ${app_name}\nPort: ${app_port}\n`
 });

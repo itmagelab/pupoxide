@@ -20,6 +20,7 @@ async fn test_exec_creates_idempotency() {
             environment: None,
             dependencies: Vec::new(),
             source_context: None,
+            mutex: None,
         });
 
     let adapter = ExecAdapter;
@@ -81,6 +82,7 @@ async fn test_exec_unless_condition() {
             environment: None,
             dependencies: Vec::new(),
             source_context: None,
+            mutex: None,
         });
 
     let adapter = ExecAdapter;
@@ -115,6 +117,7 @@ async fn test_exec_with_environment() {
             environment: Some(env),
             dependencies: Vec::new(),
             source_context: None,
+            mutex: None,
         });
 
     let adapter = ExecAdapter;
@@ -141,6 +144,7 @@ async fn test_exec_with_cwd() {
             environment: None,
             dependencies: Vec::new(),
             source_context: None,
+            mutex: None,
         });
 
     let adapter = ExecAdapter;
@@ -165,6 +169,7 @@ async fn test_exec_command_failure() {
             environment: None,
             dependencies: Vec::new(),
             source_context: None,
+            mutex: None,
         });
 
     let adapter = ExecAdapter;

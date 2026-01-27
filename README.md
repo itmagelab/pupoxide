@@ -66,10 +66,10 @@ Applies configuration directly on the current machine. Ideal for deployment scri
 
 ```bash
 # Apply a specific file
-pupoxide run --file ./site.rhai
+pupoxide run --file ./examples/environments/production/manifests/site.rhai
 
 # Apply an entire environment (Puppet-like structure)
-pupoxide apply --environment production --config ./my_configs
+pupoxide apply --environment production --config ./examples/
 
 # Preview changes only (Dry-run)
 pupoxide apply --environment production --dry-run
@@ -79,19 +79,26 @@ pupoxide apply --environment production --dry-run
 
 Secure architecture with automatic certificate generation and a three-phase bootstrap.
 
-1.  **Start the Master:**
+1. **Start the Master:**
+
     ```bash
     pupoxide master start --port 8080
     ```
-2.  **Registration Request (on Agent):**
+
+2. **Registration Request (on Agent):**
+
     ```bash
     pupoxide agent --server http://master:8080 --node agent-01 --bootstrap
     ```
-3.  **Sign Certificate (on Master):**
+
+3. **Sign Certificate (on Master):**
+
     ```bash
     pupoxide master sign --node agent-01
     ```
-4.  **Regular Operation (mTLS):**
+
+4. **Regular Operation (mTLS):**
+
     ```bash
     pupoxide agent --server https://master:8080 --node agent-01
     ```
@@ -106,10 +113,12 @@ Pupoxide encourages the **Roles and Profiles** pattern for code clarity.
 /etc/pupoxide/
 ├── environments/
 │   └── production/
-│       ├── site.rhai      # Entry point (imports roles)
-│       ├── role/          # Business logic (e.g., "web_server.rhai")
-│       ├── profile/       # Technical stacks ("nginx_proxy.rhai")
-│       └── modules/       # Reusable components (services, packages)
+│       ├── manifests/
+│       │   └── site.rhai      # Entry point (imports roles)
+│       ├── role/              # Business logic (e.g., "web_server.rhai")
+│       ├── profile/           # Technical stacks ("nginx_proxy.rhai")
+│       ├── modules/           # Reusable components (services, packages)
+│       └── data/              # Hierarchical data (YAML)
 └── certs/                 # Store for mTLS certificates
 ```
 
@@ -117,13 +126,28 @@ Pupoxide encourages the **Roles and Profiles** pattern for code clarity.
 
 ## 🛠 Additional Tools
 
-*   **Graph Visualization**: `pupoxide graph --file site.rhai --style mermaid` — generates a dependency diagram.
-*   **Rollback**: Every transaction is logged, allowing you to return the system to a previous state.
+* **Graph Visualization**: `pupoxide graph --file site.rhai --style mermaid` — generates a dependency diagram.
+*   **Serialization**: `mutex: "id"` — ensures resources in the same group run serially while maintaining global parallelism.
+* **Rollback**: Every transaction is logged, allowing you to return the system to a previous state.
+
+### 🔒 Mutex Groups (Serial Execution)
+
+Some resources (like package managers) cannot run in parallel. Use the `mutex` attribute to serialize them:
+
+```rust
+// These will run one by one, even if both are ready
+pkg("htop", #{ mutex: "brew" });
+pkg("wget", #{ mutex: "brew" });
+
+// This one remains independent and runs in parallel
+file("/tmp/config", #{ ensure: "present" });
+```
 
 ## 📖 Documentation
-- [Project Vision](doc/vision.md)
-- [Coding Conventions](doc/conventions.md)
-- [Architecture Context](doc/architecture_context.md)
+
+* [Project Vision](doc/vision.md)
+* [Coding Conventions](doc/conventions.md)
+* [Architecture Context](doc/architecture_context.md)
 
 ---
 License: MIT

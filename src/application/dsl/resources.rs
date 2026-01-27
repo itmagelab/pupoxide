@@ -1,5 +1,6 @@
 use super::context::DslContext;
-use crate::domain::resource::{ExecResource, FileResource, Resource};
+use crate::application::engine::ExecutionContext;
+use crate::domain::resource::{ExecResource, FileResource, PackageResource, Resource};
 use rhai::{Engine, Map, NativeCallContext};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -32,7 +33,7 @@ pub fn register(engine: &mut Engine) {
               path: String,
               params: Map|
               -> std::result::Result<Resource, Box<rhai::EvalAltResult>> {
-            let exec_ctx = DslContext::get_exec_ctx();
+            let exec_ctx = ExecutionContext::get_current();
             let ensure = DslContext::extract_ensure(&params);
             let dependencies =
                 DslContext::extract_dependencies(&params, &exec_ctx, ctx.call_source());
@@ -44,6 +45,7 @@ pub fn register(engine: &mut Engine) {
                 owner: DslContext::extract_string(&params, "owner"),
                 group: DslContext::extract_string(&params, "group"),
                 mode: DslContext::extract_string(&params, "mode"),
+                mutex: DslContext::extract_string(&params, "mutex"),
                 source_context: exec_ctx.get_source_context(),
             });
 
@@ -58,7 +60,7 @@ pub fn register(engine: &mut Engine) {
               id_or_command: String,
               params: Map|
               -> std::result::Result<Resource, Box<rhai::EvalAltResult>> {
-            let exec_ctx = DslContext::get_exec_ctx();
+            let exec_ctx = ExecutionContext::get_current();
             let dependencies =
                 DslContext::extract_dependencies(&params, &exec_ctx, ctx.call_source());
 
@@ -76,6 +78,7 @@ pub fn register(engine: &mut Engine) {
                 cwd,
                 environment: extract_environment(&params),
                 dependencies,
+                mutex: DslContext::extract_string(&params, "mutex"),
                 source_context: exec_ctx.get_source_context(),
             });
 
@@ -90,7 +93,7 @@ pub fn register(engine: &mut Engine) {
               path: String,
               params: Map|
               -> std::result::Result<Resource, Box<rhai::EvalAltResult>> {
-            let exec_ctx = DslContext::get_exec_ctx();
+            let exec_ctx = ExecutionContext::get_current();
             let ensure = DslContext::extract_ensure(&params);
             let dependencies =
                 DslContext::extract_dependencies(&params, &exec_ctx, ctx.call_source());
@@ -105,6 +108,39 @@ pub fn register(engine: &mut Engine) {
                 owner: DslContext::extract_string(&params, "owner"),
                 group: DslContext::extract_string(&params, "group"),
                 mode: DslContext::extract_string(&params, "mode"),
+                mutex: DslContext::extract_string(&params, "mutex"),
+                source_context: exec_ctx.get_source_context(),
+            });
+
+            DslContext::add_resource(&exec_ctx, resource).map_err(to_rhai_error)
+        },
+    );
+
+    // 'pkg_resource' function
+    engine.register_fn(
+        "pkg_resource",
+        move |ctx: NativeCallContext,
+              name: String,
+              params: Map|
+              -> std::result::Result<Resource, Box<rhai::EvalAltResult>> {
+            let exec_ctx = ExecutionContext::get_current();
+            let ensure = DslContext::extract_ensure(&params);
+            let dependencies =
+                DslContext::extract_dependencies(&params, &exec_ctx, ctx.call_source());
+            let provider = DslContext::extract_string(&params, "provider")
+                .unwrap_or_else(|| DslContext::get_default_provider(&exec_ctx));
+
+            // Automatic mutex based on provider
+            let mutex =
+                DslContext::extract_string(&params, "mutex").unwrap_or_else(|| provider.clone());
+
+            let resource = Resource::Package(PackageResource {
+                id: format!("Package[{}]", name),
+                name,
+                ensure,
+                provider,
+                dependencies,
+                mutex: Some(mutex),
                 source_context: exec_ctx.get_source_context(),
             });
 

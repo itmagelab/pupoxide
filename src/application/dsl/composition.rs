@@ -1,5 +1,4 @@
-use super::context::DslContext;
-use crate::application::engine::{InclusionType, ModuleHandle};
+use crate::application::engine::{ExecutionContext, InclusionType, ModuleHandle};
 use crate::domain::resource::{MetaKind, MetaResource, Resource};
 use rhai::{Dynamic, Engine, NativeCallContext};
 use std::path::PathBuf;
@@ -73,11 +72,11 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
         move |ctx: NativeCallContext,
               name: String|
               -> std::result::Result<ModuleHandle, Box<rhai::EvalAltResult>> {
-            let exec_ctx = DslContext::get_exec_ctx();
+            let exec_ctx = ExecutionContext::get_current();
 
             // Check constraints: Roles can only include Profiles
             {
-                let current_type =
+                let current_type: std::sync::MutexGuard<Option<InclusionType>> =
                     lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
                 if *current_type == Some(InclusionType::Role) && inc_type != InclusionType::Profile
                 {
@@ -95,7 +94,8 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             };
 
             // Check if already included
-            let mut included = lock_or_err(&exec_ctx.included_modules, "included_modules")?;
+            let mut included: std::sync::MutexGuard<std::collections::HashSet<String>> =
+                lock_or_err(&exec_ctx.included_modules, "included_modules")?;
             if included.contains(&handle.start_id) {
                 return Ok(handle);
             }
@@ -103,7 +103,8 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             drop(included);
 
             // Get current path and base path for resolution
-            let current_p = lock_or_err(&exec_ctx.current_path, "current_path")?;
+            let current_p: std::sync::MutexGuard<PathBuf> =
+                lock_or_err(&exec_ctx.current_path, "current_path")?;
             let base = lock_or_err(&m_path, "module_path")?;
             let full_path = resolve_inclusion_path(
                 inc_type,
@@ -129,7 +130,8 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
 
             // Track resource count before inclusion
             let start_node_count = {
-                let catalog = lock_or_err(&exec_ctx.catalog, "catalog")?;
+                let catalog: std::sync::MutexGuard<crate::domain::catalog::Catalog> =
+                    lock_or_err(&exec_ctx.catalog, "catalog")?;
                 catalog.graph.node_count()
             };
 
