@@ -17,7 +17,7 @@ pub struct ResourceReport {
     pub status: ResourceStatus,
     pub message: Option<String>,
     pub changed: bool,
-    pub duration: std::time::Duration,
+    pub duration: core::time::Duration,
     pub source_context: Option<SourceContext>,
 }
 
@@ -28,7 +28,7 @@ impl ResourceReport {
             status,
             message: None,
             changed,
-            duration: std::time::Duration::from_secs(0),
+            duration: core::time::Duration::from_secs(0),
             source_context: None,
         }
     }
@@ -38,7 +38,7 @@ impl ResourceReport {
         self
     }
 
-    pub fn with_duration(mut self, duration: std::time::Duration) -> Self {
+    pub fn with_duration(mut self, duration: core::time::Duration) -> Self {
         self.duration = duration;
         self
     }

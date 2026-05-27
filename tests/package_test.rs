@@ -30,7 +30,7 @@ async fn test_package_resource_compilation() {
     assert_eq!(resources.len(), 2);
 
     // Check first package (htop)
-    let res1 = resources.get(0).unwrap();
+    let res1 = resources.first().unwrap();
     if let Resource::Package(pkg) = res1 {
         assert_eq!(pkg.name, "htop");
         assert_eq!(pkg.provider, "brew"); // Default
@@ -74,7 +74,7 @@ async fn test_package_provider_mapping() {
         .unwrap();
 
     let resources = catalog.resources();
-    let res = resources.get(0).unwrap();
+    let res = resources.first().unwrap();
     if let Resource::Package(pkg) = res {
         assert_eq!(pkg.name, "vim");
         assert_eq!(pkg.provider, "apt");
