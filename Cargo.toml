@@ -1,6 +1,6 @@
 [package]
 name = "pupoxide"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "A high-performance, memory-safe, declarative configuration management tool inspired by Puppet."
 authors = ["iTmage Lab <contact@itmagelab.ru>"]
