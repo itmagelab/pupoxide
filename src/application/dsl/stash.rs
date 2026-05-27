@@ -26,9 +26,9 @@ fn lookup_internal(stash: &Option<Arc<dyn StashProvider>>, key: String, default_
         && let Some(val) = stash_impl.lookup(&key, &exec_ctx.facts)
     {
         return match val {
-            serde_yml::Value::String(s) => Dynamic::from(s),
-            serde_yml::Value::Bool(b) => Dynamic::from(b),
-            serde_yml::Value::Number(n) => {
+            yaml_serde::Value::String(s) => Dynamic::from(s),
+            yaml_serde::Value::Bool(b) => Dynamic::from(b),
+            yaml_serde::Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     Dynamic::from(i)
                 } else if let Some(f) = n.as_f64() {
@@ -37,7 +37,7 @@ fn lookup_internal(stash: &Option<Arc<dyn StashProvider>>, key: String, default_
                     Dynamic::from(n.to_string())
                 }
             }
-            _ => Dynamic::from(serde_yml::to_string(&val).unwrap_or_default()),
+            _ => Dynamic::from(yaml_serde::to_string(&val).unwrap_or_default()),
         };
     }
     default_val.unwrap_or(Dynamic::UNIT)

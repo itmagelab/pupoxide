@@ -3,7 +3,7 @@ use crate::domain::error::Result;
 use crate::domain::facts::Facts;
 use crate::domain::resource::Resource;
 pub trait StashProvider: Send + Sync {
-    fn lookup(&self, key: &str, facts: &crate::domain::facts::Facts) -> Option<serde_yml::Value>;
+    fn lookup(&self, key: &str, facts: &crate::domain::facts::Facts) -> Option<yaml_serde::Value>;
 }
 use rhai::{Dynamic, Engine, Map, Scope};
 use std::cell::RefCell;
