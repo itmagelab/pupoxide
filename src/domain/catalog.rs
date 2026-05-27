@@ -199,12 +199,134 @@ impl Catalog {
         visited.insert(idx, new_idx);
 
         // Copy edges (dependencies)
-        for edge in self.graph.edges(idx) {
-            let target_node_idx = edge.target();
-            let new_target_idx = self.copy_recursive(target_node_idx, target, visited)?;
-            target.graph.add_edge(new_idx, new_target_idx, ());
+        for edge in self.graph.edges_directed(idx, petgraph::Direction::Incoming) {
+            let source_node_idx = edge.source();
+            let new_source_idx = self.copy_recursive(source_node_idx, target, visited)?;
+            target.graph.add_edge(new_source_idx, new_idx, ());
         }
 
         Ok(new_idx)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::resource::{MetaKind, MetaResource, Resource};
+
+    fn make_meta_resource(id: &str, deps: Vec<&str>) -> Resource {
+        Resource::Meta(MetaResource {
+            id: id.to_string(),
+            kind: MetaKind::ModuleStart,
+            dependencies: deps.into_iter().map(String::from).collect(),
+        })
+    }
+
+    #[test]
+    fn test_topological_sort_success() -> crate::domain::error::Result<()> {
+        let mut catalog = Catalog::new("test-node".to_string(), "test-env".to_string());
+
+        // Setup resources: res1 (no deps), res2 (depends on res1), res3 (depends on res2), res4 (depends on res1)
+        catalog.add_resource(make_meta_resource("res1", vec![]));
+        catalog.add_resource(make_meta_resource("res2", vec!["res1"]));
+        catalog.add_resource(make_meta_resource("res3", vec!["res2"]));
+        catalog.add_resource(make_meta_resource("res4", vec!["res1"]));
+
+        catalog.build_edges();
+
+        let sorted = catalog.topological_sort()?;
+        assert_eq!(sorted.len(), 4);
+
+        // Helper to find index in sorted vector without unwrap
+        let pos = |id: &str| -> Result<usize> {
+            sorted.iter()
+                .position(|r| r.id() == id)
+                .ok_or_else(|| anyhow::anyhow!("Resource {} not found", id))
+        };
+
+        // res1 must be evaluated before res2 and res4
+        assert!(pos("res1")? < pos("res2")?);
+        assert!(pos("res1")? < pos("res4")?);
+
+        // res2 must be evaluated before res3
+        assert!(pos("res2")? < pos("res3")?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_circular_dependency_detection() -> crate::domain::error::Result<()> {
+        let mut catalog = Catalog::new("test-node".to_string(), "test-env".to_string());
+
+        // Cyclic dependency: A depends on B, B depends on A
+        catalog.add_resource(make_meta_resource("resA", vec!["resB"]));
+        catalog.add_resource(make_meta_resource("resB", vec!["resA"]));
+
+        catalog.build_edges();
+
+        let sorted = catalog.topological_sort();
+        assert!(sorted.is_err());
+        if let Err(e) = sorted {
+            let err_msg = e.to_string();
+            assert!(err_msg.contains("Circular dependency detected"));
+        } else {
+            return Err(anyhow::anyhow!("Expected topological sort to fail with circular dependency error"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_branch_recursive() -> crate::domain::error::Result<()> {
+        let mut catalog = Catalog::new("test-node".to_string(), "test-env".to_string());
+
+        // A depends on B and C, B depends on D. E is isolated.
+        catalog.add_resource(make_meta_resource("A", vec!["B", "C"]));
+        catalog.add_resource(make_meta_resource("B", vec!["D"]));
+        catalog.add_resource(make_meta_resource("C", vec![]));
+        catalog.add_resource(make_meta_resource("D", vec![]));
+        catalog.add_resource(make_meta_resource("E", vec![]));
+
+        catalog.build_edges();
+
+        // Extract branch for A (should include A, B, C, D, but NOT E)
+        let branch = catalog.get_branch("A")?;
+
+        assert_eq!(branch.resources().len(), 4);
+        assert!(branch.get_resource("A").is_some());
+        assert!(branch.get_resource("B").is_some());
+        assert!(branch.get_resource("C").is_some());
+        assert!(branch.get_resource("D").is_some());
+        assert!(branch.get_resource("E").is_none());
+
+        // Verify that dependencies are properly reconstructed in the branch catalog
+        let b_sorted = branch.topological_sort()?;
+        let pos = |id: &str| -> Result<usize> {
+            b_sorted.iter()
+                .position(|r| r.id() == id)
+                .ok_or_else(|| anyhow::anyhow!("Resource {} not found", id))
+        };
+
+        assert!(pos("D")? < pos("B")?);
+        assert!(pos("B")? < pos("A")?);
+        assert!(pos("C")? < pos("A")?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_edges_missing_dependency() -> crate::domain::error::Result<()> {
+        let mut catalog = Catalog::new("test-node".to_string(), "test-env".to_string());
+
+        // A depends on missing resource B
+        catalog.add_resource(make_meta_resource("A", vec!["B"]));
+
+        // Should not fail, just soft warn and ignore
+        catalog.build_edges();
+
+        let sorted = catalog.topological_sort()?;
+        assert_eq!(sorted.len(), 1);
+        assert_eq!(sorted[0].id(), "A");
+        Ok(())
+    }
+}
+
