@@ -52,14 +52,14 @@ impl Stash {
         }))
     }
 
-    /// Иерархический поиск значения по ключу на основе собранных фактов.
+    /// Performs a hierarchical search for a value by key based on collected facts.
     ///
-    /// Поиск выполняется по следующему алгоритму:
-    /// 1. Перебираются все записи иерархии (`hierarchy`), описанные в `stash.yaml`.
-    /// 2. Каждое имя пути файла интерполируется через Tera на основе текущих фактов (например, `os/{{facts.os_family}}.yaml` превращается в `os/Darwin.yaml`).
-    /// 3. Полученный путь сопоставляется с реальным файлом в папке `data/`.
-    /// 4. Если файл существует и содержит искомый ключ, значение немедленно извлекается и возвращается.
-    /// 5. Если ни в одном из файлов иерархии ключ не найден, возвращается значение по умолчанию (`defaults`), если оно настроено.
+    /// The lookup algorithm performs the following steps:
+    /// 1. Iterates through all hierarchy entries (`hierarchy`) described in `stash.yaml`.
+    /// 2. Interpolates each file path pattern using Tera based on the current facts (e.g., `os/{{facts.os_family}}.yaml` becomes `os/Darwin.yaml`).
+    /// 3. Resolves the interpolated path against files in the `data/` folder.
+    /// 4. If the file exists and contains the requested key, the value is immediately extracted and returned.
+    /// 5. If the key is not found in any files of the hierarchy, returns the configured default value (`defaults`), if any.
     pub fn lookup(&self, key: &str, facts: &Facts) -> Option<Value> {
         debug!("Stash lookup for key: {}", key);
 

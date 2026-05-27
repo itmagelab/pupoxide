@@ -265,16 +265,16 @@ impl PupoxideModuleResolver {
 }
 
 impl rhai::ModuleResolver for PupoxideModuleResolver {
-    /// Разрешение и компиляция импортируемого модуля манифеста (например, `import "nginx"`).
+    /// Resolves and compiles an imported manifest module (e.g., `import "nginx"`).
     ///
-    /// Метод выполняет следующие действия для изоляции и связывания модулей:
-    /// 1. Находит абсолютный путь к файлу модуля (относительно текущего пути или в каталоге `modules/`).
-    /// 2. Генерирует уникальные мета-ресурсы-маркеры начала (`ModuleStart[...]`) и конца (`ModuleEnd[...]`) модуля.
-    /// 3. Помещает маркер начала в каталог и связывает его с родительским модулем (для соблюдения порядка выполнения).
-    /// 4. Добавляет имя модуля в стек выполнения и временно переключает текущий рабочий каталог движка.
-    /// 5. Компилирует и выполняет AST-код модуля Rhai в изолированной области видимости (`Scope`), передавая туда системные факты.
-    /// 6. После успешного выполнения восстанавливает рабочий каталог и извлекает модуль из стека.
-    /// 7. Создает маркер конца модуля `ModuleEnd`, который зависит от маркера начала и всех ресурсов, объявленных внутри модуля.
+    /// The method performs the following steps for module isolation and tracking:
+    /// 1. Locates the absolute path to the module file (relative to the current path or inside `modules/`).
+    /// 2. Generates unique metadata resource markers for module start (`ModuleStart[...]`) and end (`ModuleEnd[...]`).
+    /// 3. Adds the start marker to the catalog and links it to the parent module (to maintain dependency ordering).
+    /// 4. Pushes the module name onto the execution stack and temporarily switches the engine's working directory.
+    /// 5. Compiles and evaluates the Rhai module's AST inside an isolated `Scope`, passing the system facts.
+    /// 6. Restores the working directory and pops the module from the stack after execution.
+    /// 7. Creates the `ModuleEnd` marker, which depends on the start marker and all resources declared within the module.
     fn resolve(
         &self,
         engine: &rhai::Engine,

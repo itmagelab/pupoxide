@@ -119,20 +119,20 @@ impl ExecutionState {
     }
 }
 
-/// Запуск транзакции по применению каталога ресурсов.
+/// Executes a transaction to apply the resource catalog.
 ///
-/// Этот метод параллельно применяет ресурсы на целевой системе, строго соблюдая порядок зависимостей.
-/// Выполнение использует алгоритм топологической сортировки Кана (очередь готовых вершин):
-/// 1. Все ресурсы с нулевым числом зависимостей (готовые к выполнению) помещаются в `ready_queue`.
-/// 2. Для каждого готового ресурса параллельно порождается асинхронная задача `tokio::spawn`.
-/// 3. Ресурсы, имеющие одинаковый `mutex_id` (например, пакетные менеджеры `brew` или `apt`), выполняются последовательно через внутренний пул мьютексов для предотвращения конфликтов.
-/// 4. При успешном завершении ресурса его зависимые потомки уменьшают свои счетчики ожидаемых связей. Полностью разблокированные ресурсы отправляются в очередь.
-/// 5. Если какой-либо родительский ресурс завершился ошибкой (`Failed`), все его потомки рекурсивно помечаются как `Skipped` (каскадное распространение ошибки/пропуска).
+/// This method applies resources in parallel on the target system, strictly respecting the dependency order.
+/// The execution uses a parallel Kahn-like topological sort algorithm (ready-queue approach):
+/// 1. All resources with zero active dependencies are placed in the `ready_queue`.
+/// 2. For each ready resource, a concurrent asynchronous task is spawned using `tokio::spawn`.
+/// 3. Resources with the same `mutex_id` (e.g. package managers like `brew` or `apt`) are executed sequentially via an internal mutex pool to prevent conflicts.
+/// 4. Upon successful completion of a resource, its dependent children decrement their expected connection counters. Fully unlocked resources are pushed to the queue.
+/// 5. If any parent resource fails (`Failed`), all its transitive descendants are recursively marked as `Skipped` (cascade failure/skip propagation).
 ///
-/// # Пример:
+/// # Example:
 /// ```rust,ignore
 /// let reports = execute_transaction(catalog, &state_store, provider, false, |report| {
-///     println!("Ресурс [{}] применен со статусом {:?}", report.resource_id, report.status);
+///     println!("Resource [{}] applied with status {:?}", report.resource_id, report.status);
 /// }).await?;
 /// ```
 pub async fn execute_transaction(
@@ -267,15 +267,15 @@ pub async fn execute_transaction(
     Ok(final_reports)
 }
 
-/// Обработка одного системного ресурса.
+/// Processes a single system resource.
 ///
-/// Алгоритм обработки ресурса гарантирует идемпотентность выполнения:
-/// 1. Запрашивается текущее состояние ресурса на целевой системе (`provider.get_state`).
-/// 2. Исходное состояние сохраняется в объекте транзакции (`original_states`) для возможности аудита или будущего отката.
-/// 3. Производится детальное сравнение желаемого и фактического состояний (проверка на идемпотентность):
-///    - Если состояния совпадают, ресурс помечается как `Unchanged` и не затрагивает систему.
-///    - Если состояния отличаются и включен режим предварительного просмотра (`dry_run`), возвращается статус `WouldApply`.
-/// 4. При наличии расхождений в штатном режиме вызывается `provider.apply` для приведения системы к целевому виду.
+/// The resource processing algorithm guarantees idempotency:
+/// 1. Queries the resource's current state on the target system (`provider.get_state`).
+/// 2. Saves the original state in the transaction (`original_states`) for audit or rollback purposes.
+/// 3. Performs a detailed comparison of the desired and actual states (idempotency check):
+///    - If the states match, the resource is marked as `Unchanged` and does not affect the system.
+///    - If the states differ and dry-run mode is active (`dry_run`), returns `WouldApply`.
+/// 4. If there are mismatches in normal execution mode, calls `provider.apply` to bring the system to the desired state.
 async fn process_single_resource(
     resource: Resource,
     provider: Arc<dyn ResourceProvider>,
