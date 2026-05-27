@@ -1,5 +1,4 @@
 #![deny(clippy::unwrap_used)]
-#![allow(deprecated, clippy::unnecessary_struct_initialization)]
 use anyhow::Result;
 use clap::Parser;
 
