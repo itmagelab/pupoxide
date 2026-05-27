@@ -129,3 +129,9 @@ impl Stash {
         }
     }
 }
+
+impl crate::application::StashProvider for Stash {
+    fn lookup(&self, key: &str, facts: &crate::domain::facts::Facts) -> Option<serde_yaml::Value> {
+        self.lookup(key, facts)
+    }
+}

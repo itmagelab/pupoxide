@@ -12,7 +12,13 @@ impl StateStore {
         Self { root }
     }
 
-    pub fn save_transaction(&self, transaction: &Transaction) -> Result<()> {
+    fn get_transaction_path(&self, id: &str) -> PathBuf {
+        self.root.join("transactions").join(format!("{}.json", id))
+    }
+}
+
+impl crate::application::transaction::StateStore for StateStore {
+    fn save_transaction(&self, transaction: &Transaction) -> Result<()> {
         let path = self.get_transaction_path(&transaction.id);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).context("Failed to create state dir")?;
@@ -28,20 +34,16 @@ impl StateStore {
         Ok(())
     }
 
-    pub fn load_transaction(&self, id: &str) -> Result<Transaction> {
+    fn load_transaction(&self, id: &str) -> Result<Transaction> {
         let path = self.get_transaction_path(id);
         let json =
             fs::read_to_string(path).context(format!("Failed to read transaction {}", id))?;
         serde_json::from_str(&json).context("Failed to deserialize transaction")
     }
 
-    pub fn load_latest_transaction(&self) -> Result<Transaction> {
+    fn load_latest_transaction(&self) -> Result<Transaction> {
         let latest_path = self.root.join("latest_transaction");
         let id = fs::read_to_string(latest_path).context("No previous transaction found")?;
         self.load_transaction(id.trim())
-    }
-
-    fn get_transaction_path(&self, id: &str) -> PathBuf {
-        self.root.join("transactions").join(format!("{}.json", id))
     }
 }

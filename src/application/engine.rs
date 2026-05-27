@@ -2,7 +2,9 @@ use crate::domain::catalog::Catalog;
 use crate::domain::error::Result;
 use crate::domain::facts::Facts;
 use crate::domain::resource::Resource;
-use crate::infrastructure::stash::Stash;
+pub trait StashProvider: Send + Sync {
+    fn lookup(&self, key: &str, facts: &crate::domain::facts::Facts) -> Option<serde_yaml::Value>;
+}
 use rhai::{Dynamic, Engine, Map, Scope};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -143,12 +145,12 @@ pub struct ModuleHandle {
 pub struct PupoxideEngine {
     engine: Arc<Engine>,
     module_path: Arc<Mutex<Option<PathBuf>>>,
-    _stash: Arc<Option<Stash>>,
+    _stash: Option<Arc<dyn StashProvider>>,
 }
 
 pub struct PupoxideEngineBuilder {
     engine: Engine,
-    stash: Option<Stash>,
+    stash: Option<Arc<dyn StashProvider>>,
     module_path: Arc<Mutex<Option<PathBuf>>>,
 }
 
@@ -167,7 +169,7 @@ impl PupoxideEngineBuilder {
         }
     }
 
-    pub fn with_stash(mut self, stash: Stash) -> Self {
+    pub fn with_stash(mut self, stash: Arc<dyn StashProvider>) -> Self {
         self.stash = Some(stash);
         self
     }
@@ -178,7 +180,7 @@ impl PupoxideEngineBuilder {
     }
 
     pub fn register_defaults(mut self) -> Self {
-        let stash = Arc::new(self.stash.clone());
+        let stash = self.stash.clone();
         dsl::register_all(&mut self.engine, stash, self.module_path.clone());
         self
     }
@@ -191,7 +193,7 @@ impl PupoxideEngineBuilder {
         PupoxideEngine {
             engine: Arc::new(engine),
             module_path: self.module_path,
-            _stash: Arc::new(self.stash),
+            _stash: self.stash,
         }
     }
 }
@@ -400,7 +402,7 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
 }
 
 impl PupoxideEngine {
-    pub fn new(stash: Option<Stash>) -> Self {
+    pub fn new(stash: Option<Arc<dyn StashProvider>>) -> Self {
         let mut builder = PupoxideEngineBuilder::new();
         if let Some(s) = stash {
             builder = builder.with_stash(s);

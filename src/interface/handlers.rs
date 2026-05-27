@@ -72,7 +72,8 @@ pub async fn handle_apply(
         .to_path_buf();
 
     match crate::infrastructure::Stash::new(env_path) {
-        Ok(s) => stash = s,
+        Ok(Some(s)) => stash = Some(Arc::new(s) as Arc<dyn crate::application::StashProvider>),
+        Ok(None) => {}
         Err(e) => warn!("Failed to load Stash: {}", e),
     }
 

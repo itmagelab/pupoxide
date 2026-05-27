@@ -1,8 +1,13 @@
 use crate::domain::catalog::Catalog;
 use crate::domain::report::{ResourceReport, ResourceStatus};
 use crate::domain::resource::{Ensure, Resource, ResourceProvider, ResourceState};
-use crate::infrastructure::StateStore;
 use anyhow::Result;
+
+pub trait StateStore: Send + Sync {
+    fn save_transaction(&self, transaction: &crate::domain::transaction::Transaction) -> Result<()>;
+    fn load_transaction(&self, id: &str) -> Result<crate::domain::transaction::Transaction>;
+    fn load_latest_transaction(&self) -> Result<crate::domain::transaction::Transaction>;
+}
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -116,7 +121,7 @@ impl ExecutionState {
 
 pub async fn execute_transaction(
     catalog: Catalog,
-    state_store: &StateStore,
+    state_store: &dyn StateStore,
     provider: Arc<dyn ResourceProvider>,
     dry_run: bool,
     mut on_report: impl FnMut(&ResourceReport),

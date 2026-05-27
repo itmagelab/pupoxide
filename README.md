@@ -69,7 +69,7 @@ Applies configuration directly on the current machine. Ideal for deployment scri
 pupoxide run --file ./examples/environments/production/manifests/site.rhai
 
 # Apply an entire environment (Puppet-like structure)
-pupoxide apply --environment production --config ./examples/
+pupoxide --config ./examples/ apply --environment production
 
 # Preview changes only (Dry-run)
 pupoxide apply --environment production --dry-run

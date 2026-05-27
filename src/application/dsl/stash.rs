@@ -1,9 +1,9 @@
 use crate::application::engine::CURRENT_EXEC_CTX;
-use crate::infrastructure::stash::Stash;
+use crate::application::StashProvider;
 use rhai::{Dynamic, Engine};
 use std::sync::Arc;
 
-pub fn register(engine: &mut Engine, stash: Arc<Option<Stash>>) {
+pub fn register(engine: &mut Engine, stash: Option<Arc<dyn StashProvider>>) {
     let s = stash.clone();
     engine.register_fn("lookup", move |key: String| -> Dynamic {
         lookup_internal(&s, key, None)
@@ -18,7 +18,7 @@ pub fn register(engine: &mut Engine, stash: Arc<Option<Stash>>) {
     );
 }
 
-fn lookup_internal(stash: &Option<Stash>, key: String, default_val: Option<Dynamic>) -> Dynamic {
+fn lookup_internal(stash: &Option<Arc<dyn StashProvider>>, key: String, default_val: Option<Dynamic>) -> Dynamic {
     let exec_ctx =
         CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("Execution context must be set"));
 
