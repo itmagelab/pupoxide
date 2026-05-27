@@ -3,9 +3,16 @@ use crate::domain::report::{ResourceReport, ResourceStatus};
 use crate::domain::resource::{Ensure, Resource, ResourceProvider, ResourceState};
 use anyhow::Result;
 
+/// Trait (Port) abstracting transaction history and persistence.
+///
+/// Implementations handle saving and loading transactions to/from persistent storage
+/// (e.g., local files, database) to track configuration history and states.
 pub trait StateStore: Send + Sync {
+    /// Persists a transaction to the storage.
     fn save_transaction(&self, transaction: &crate::domain::transaction::Transaction) -> Result<()>;
+    /// Loads a specific transaction by its unique identifier.
     fn load_transaction(&self, id: &str) -> Result<crate::domain::transaction::Transaction>;
+    /// Loads the most recently applied transaction.
     fn load_latest_transaction(&self) -> Result<crate::domain::transaction::Transaction>;
 }
 use std::collections::{HashMap, HashSet, VecDeque};

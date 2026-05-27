@@ -2,7 +2,10 @@ use crate::domain::catalog::Catalog;
 use crate::domain::error::Result;
 use crate::domain::facts::Facts;
 use crate::domain::resource::Resource;
+
+/// Trait (Port) abstracting value lookup from a configuration stash (hierarchical data store).
 pub trait StashProvider: Send + Sync {
+    /// Looks up a value by its key path, optionally matching target host facts.
     fn lookup(&self, key: &str, facts: &crate::domain::facts::Facts) -> Option<yaml_serde::Value>;
 }
 use rhai::{Dynamic, Engine, Map, Scope};
@@ -14,29 +17,44 @@ use std::sync::{Arc, Mutex};
 use super::dsl;
 
 thread_local! {
+    /// Thread-local storage holding the active execution context during Rhai evaluation.
     pub static CURRENT_EXEC_CTX: RefCell<Option<ExecutionContext>> = const { RefCell::new(None) };
 }
 
+/// Category of hierarchical inclusion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InclusionType {
+    /// A generic manifest module (e.g. `import "nginx"`).
     Module,
+    /// A top-level node definition role.
     Role,
+    /// A configuration package profile.
     Profile,
 }
 
+/// The runtime context holding current catalog state, module call stacks, and collected facts.
+///
+/// This context is dynamically accessed by DSL helper functions during Rhai execution.
 #[derive(Clone, Debug)]
 pub struct ExecutionContext {
+    /// The catalog under construction.
     pub catalog: Arc<Mutex<Catalog>>,
+    /// Tracks modules that have already been included to prevent redundant evaluation.
     pub included_modules: Arc<Mutex<HashSet<String>>>,
+    /// Active hierarchical stack of inclusion paths.
     pub module_stack: Arc<Mutex<Vec<(InclusionType, String)>>>,
+    /// The currently active inclusion category.
     pub current_inclusion_type: Arc<Mutex<Option<InclusionType>>>,
+    /// Collected system facts.
     pub facts: Arc<Facts>,
+    /// Absolute path of the currently evaluating manifest.
     pub current_path: Arc<Mutex<PathBuf>>,
-    /// Maps Rhai source name to the corresponding ModuleStart ID
+    /// Maps Rhai source locations to topological ModuleStart nodes.
     pub source_map: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl ExecutionContext {
+    /// Creates a new `ExecutionContext` for the given node and environment.
     pub fn new(facts: Facts, path: PathBuf, node_name: String, environment: String) -> Self {
         Self {
             catalog: Arc::new(Mutex::new(Catalog::new(node_name, environment))),
@@ -49,6 +67,11 @@ impl ExecutionContext {
         }
     }
 
+    /// Safely retrieves the active execution context from thread-local storage.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called outside the context of Rhai manifest evaluation.
     pub fn get_current() -> Self {
         CURRENT_EXEC_CTX.with(|ctx| {
             ctx.borrow()
@@ -59,6 +82,7 @@ impl ExecutionContext {
         })
     }
 
+    /// Computes and returns the logical hierarchical location context (role, profile, module path).
     pub fn get_source_context(&self) -> Option<crate::domain::resource::SourceContext> {
         let stack = self.module_stack.lock().ok()?;
         let mut context = crate::domain::resource::SourceContext::default();
@@ -88,6 +112,9 @@ impl ExecutionContext {
         }
     }
 
+    /// Adds a compiled resource to the local catalog.
+    ///
+    /// Ensures architectural purity rules (e.g. preventing direct resources inside Roles).
     pub fn add_resource(&self, resource: Resource) -> Result<Resource> {
         // Enforce role constraints: Resources cannot be added directly in Roles
         {
@@ -112,12 +139,14 @@ impl ExecutionContext {
         Ok(resource)
     }
 
+    /// Registers a dependency between two resources.
     pub fn add_dependency_between_ids(&self, lhs_id: &str, rhs_id: &str) {
         if let Ok(mut catalog) = self.catalog.lock() {
             let _ = catalog.add_dependency(lhs_id, rhs_id);
         }
     }
 
+    /// Selects the default package provider based on system OS facts.
     pub fn get_default_provider(&self) -> String {
         let os_family = self
             .facts
@@ -134,13 +163,18 @@ impl ExecutionContext {
     }
 }
 
+/// Tracks bounds and handles for evaluating standard modules.
 #[derive(Clone, Debug)]
 pub struct ModuleHandle {
+    /// The name of the module.
     pub name: String,
+    /// Identifier of the topological starting node.
     pub start_id: String,
+    /// Identifier of the topological ending node.
     pub end_id: String,
 }
 
+/// The core Pupoxide engine for running and executing infrastructure-as-code manifests.
 #[derive(Clone)]
 pub struct PupoxideEngine {
     engine: Arc<Engine>,
@@ -148,6 +182,7 @@ pub struct PupoxideEngine {
     _stash: Option<Arc<dyn StashProvider>>,
 }
 
+/// A builder helper to initialize and configure a custom `PupoxideEngine`.
 pub struct PupoxideEngineBuilder {
     engine: Engine,
     stash: Option<Arc<dyn StashProvider>>,
@@ -161,6 +196,7 @@ impl Default for PupoxideEngineBuilder {
 }
 
 impl PupoxideEngineBuilder {
+    /// Creates a new `PupoxideEngineBuilder` with empty default configuration.
     pub fn new() -> Self {
         Self {
             engine: Engine::new(),
@@ -169,22 +205,26 @@ impl PupoxideEngineBuilder {
         }
     }
 
+    /// Associates a hierarchical configuration stash with the engine.
     pub fn with_stash(mut self, stash: Arc<dyn StashProvider>) -> Self {
         self.stash = Some(stash);
         self
     }
 
+    /// Configures the base directory used to resolve imported manifests and modules.
     pub fn with_module_path(self, path: PathBuf) -> Self {
         *self.module_path.lock().expect("Failed to lock module path") = Some(path);
         self
     }
 
+    /// Registers standard Pupoxide DSL functions, facts, and helpers.
     pub fn register_defaults(mut self) -> Self {
         let stash = self.stash.clone();
         dsl::register_all(&mut self.engine, stash, self.module_path.clone());
         self
     }
 
+    /// Builds and returns the configured `PupoxideEngine`.
     pub fn build(self) -> PupoxideEngine {
         let mut engine = self.engine;
         engine.set_module_resolver(PupoxideModuleResolver {
@@ -197,6 +237,7 @@ impl PupoxideEngineBuilder {
         }
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub struct PupoxideModuleResolver {
@@ -412,6 +453,7 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
 }
 
 impl PupoxideEngine {
+    /// Creates a default `PupoxideEngine` with an optional data stash provider.
     pub fn new(stash: Option<Arc<dyn StashProvider>>) -> Self {
         let mut builder = PupoxideEngineBuilder::new();
         if let Some(s) = stash {
@@ -420,14 +462,21 @@ impl PupoxideEngine {
         builder.register_defaults().build()
     }
 
+    /// Returns a new `PupoxideEngineBuilder` to customize the engine setup.
     pub fn builder() -> PupoxideEngineBuilder {
         PupoxideEngineBuilder::new()
     }
 
+    /// Sets the base path for finding external modules.
     pub fn set_module_path(&self, path: PathBuf) {
         *self.module_path.lock().expect("Failed to lock module path") = Some(path);
     }
 
+    /// Compiles and evaluates the root manifest, building and returning a dependency-ordered `Catalog`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Rhai compilation, evaluation, or final catalog topological sorting fails.
     pub fn run_manifest(
         &self,
         path: PathBuf,
@@ -489,6 +538,7 @@ impl PupoxideEngine {
         Ok(catalog)
     }
 
+    /// A helper method that sets the module search path and immediately evaluates the root manifest.
     pub fn run_manifest_with_modules(
         &self,
         path: PathBuf,
@@ -501,3 +551,4 @@ impl PupoxideEngine {
         self.run_manifest(path, node_name, environment, facts)
     }
 }
+

@@ -7,20 +7,32 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
+/// Root configuration schema for the hierarchical stash.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StashConfig {
+    /// Schema format version.
     pub version: u32,
+    /// Default values used when a key is not found in the hierarchy.
     pub defaults: Option<HashMap<String, Value>>,
+    /// Ordered hierarchy levels to search for values.
     pub hierarchy: Vec<HierarchyEntry>,
 }
 
+/// A single hierarchy level representing files or directories to lookup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HierarchyEntry {
+    /// Friendly name of this hierarchy level.
     pub name: String,
+    /// A single file path template (e.g. `"nodes/{{facts.hostname}}.yaml"`).
     pub path: Option<String>,
+    /// A list of multiple file path templates.
     pub paths: Option<Vec<String>>,
 }
 
+/// Concrete file system adapter implementing `StashProvider`.
+///
+/// Loads configurations dynamically from `stash.yaml` and executes hierarchical,
+/// Tera-templated lookup against files in the `data/` directory.
 #[derive(Clone)]
 pub struct Stash {
     _config_path: PathBuf,
@@ -30,6 +42,9 @@ pub struct Stash {
 }
 
 impl Stash {
+    /// Attempts to instantiate a new `Stash` from the environment directory path.
+    ///
+    /// Returns `None` if `stash.yaml` does not exist in the target directory.
     pub fn new(environment_path: PathBuf) -> Result<Option<Self>> {
         let config_path = environment_path.join("stash.yaml");
         if !config_path.exists() {

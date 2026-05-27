@@ -7,18 +7,28 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, warn};
 
+/// A representation of the system configuration as a directed acyclic graph (DAG) of resources.
+///
+/// `Catalog` manages the relationships and dependency order between different system components
+/// (files, directories, packages, executions) to ensure safe and predictable application.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Catalog {
+    /// The target hostname/node name this catalog is intended for.
     pub node_name: String,
+    /// The deployment environment (e.g., `"production"`, `"staging"`).
     pub environment: String,
+    /// The directed graph containing the resources.
     pub graph: DiGraph<Resource, ()>,
+    /// UNIX timestamp when the catalog was compiled.
     pub timestamp: i64,
-    /// Helper to find node index by resource ID (not serialized, rebuilt on load)
+    /// Helper map to find node index by resource ID.
+    /// Excluded from serialization and rebuilt dynamically on load.
     #[serde(skip)]
     id_map: HashMap<String, NodeIndex>,
 }
 
 impl Catalog {
+    /// Creates a new, empty `Catalog` for the given node and environment.
     pub fn new(node_name: String, environment: String) -> Self {
         Self {
             node_name,
@@ -29,12 +39,17 @@ impl Catalog {
         }
     }
 
+    /// Adds a new resource to the catalog graph.
     pub fn add_resource(&mut self, resource: Resource) {
         let id = resource.id().to_string();
         let idx = self.graph.add_node(resource);
         self.id_map.insert(id, idx);
     }
 
+    /// Explicitly declares a dependency between two resources.
+    ///
+    /// The resource with ID `to_id` will depend on the resource with ID `from_id`
+    /// (i.e. `from_id` must execute BEFORE `to_id`).
     pub fn add_dependency(&mut self, from_id: &str, to_id: &str) -> Result<()> {
         let from_idx = *self
             .id_map
@@ -55,7 +70,7 @@ impl Catalog {
         Ok(())
     }
 
-    /// Rebuilds the ID map after deserialization
+    /// Rebuilds the internal lookup map after deserializing the catalog.
     pub fn rebuild_id_map(&mut self) {
         self.id_map.clear();
         for idx in self.graph.node_indices() {
@@ -64,21 +79,16 @@ impl Catalog {
         }
     }
 
+    /// Retrieves a reference to a resource by its unique identifier.
     pub fn get_resource(&self, id: &str) -> Option<&Resource> {
         self.id_map.get(id).map(|&idx| &self.graph[idx])
     }
 
-    /// Populates graph edges based on resource dependencies.
+    /// Populates directed graph edges based on embedded resource dependencies.
     ///
-    /// This function iterates over all resources in the graph. For each resource, it checks
-    /// its `dependencies` list (which contains resource IDs). If a dependency ID is found
-    /// in the `id_map`, a graph edge is created from the dependency to the dependent resource.
-    ///
-    /// This ensures that the graph structure reflects the logical dependencies defined
-    /// in the resources, allowing for correct topological sorting and execution.
-    ///
-    /// If a dependency is missing from the catalog, a warning is logged, but the edge
-    /// is skipped (soft failure).
+    /// Iterates over all resources in the catalog and establishes graph connections
+    /// based on the IDs returned by `dependencies()`. Missing dependencies result in warnings
+    /// but do not halt the process.
     pub fn build_edges(&mut self) {
         // Clear existing edges to avoid duplicates.
         // This makes the operation idempotent and safe to call multiple times,
@@ -126,6 +136,7 @@ impl Catalog {
         );
     }
 
+    /// Returns a flat vector of all resources defined in this catalog.
     pub fn resources(&self) -> Vec<Resource> {
         self.graph
             .node_indices()
@@ -133,6 +144,9 @@ impl Catalog {
             .collect()
     }
 
+    /// Sorts the resources topologically, producing a valid linear execution order.
+    ///
+    /// Returns an error if a circular dependency is detected.
     pub fn topological_sort(&self) -> Result<Vec<Resource>> {
         match toposort(&self.graph, None) {
             Ok(indices) => Ok(indices
@@ -149,7 +163,7 @@ impl Catalog {
         }
     }
 
-    /// Returns a subgraph (sub-catalog) containing the resource and all its dependencies
+    /// Returns a sub-catalog (subgraph branch) containing the specified root resource and all its dependencies.
     pub fn get_branch(&self, root_id: &str) -> Result<Catalog> {
         let root_idx = *self
             .id_map
