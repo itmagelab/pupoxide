@@ -9,7 +9,8 @@ use anyhow::Result;
 /// (e.g., local files, database) to track configuration history and states.
 pub trait StateStore: Send + Sync {
     /// Persists a transaction to the storage.
-    fn save_transaction(&self, transaction: &crate::domain::transaction::Transaction) -> Result<()>;
+    fn save_transaction(&self, transaction: &crate::domain::transaction::Transaction)
+    -> Result<()>;
     /// Loads a specific transaction by its unique identifier.
     fn load_transaction(&self, id: &str) -> Result<crate::domain::transaction::Transaction>;
     /// Loads the most recently applied transaction.
@@ -110,10 +111,7 @@ impl ExecutionState {
         } else if failed_deps.len() == 1 {
             Some(format!("Dependency failed: {}", failed_deps[0]))
         } else {
-            Some(format!(
-                "Dependencies failed: {}",
-                failed_deps.join(", ")
-            ))
+            Some(format!("Dependencies failed: {}", failed_deps.join(", ")))
         }
     }
 
@@ -182,7 +180,9 @@ pub async fn execute_transaction(
                     .with_message(error_msg)
                     .with_source_context(get_source_context(&resource));
 
-                on_report(&report);
+                if !matches!(resource, Resource::Meta(_)) {
+                    on_report(&report);
+                }
                 state.record_completion(res_id.clone(), report);
                 state.failed_roots.insert(res_id.clone()); // Propagation
 
@@ -337,7 +337,7 @@ async fn process_single_resource(
     // 3. Apply changes
     match provider.apply(&resource).await {
         Err(e) => {
-            tracing::error!(id = %id, error = %e, "Failed to apply resource");
+            tracing::debug!(id = %id, error = %e, "Failed to apply resource");
             ResourceReport::new(id, ResourceStatus::Failed, false)
                 .with_message(e.to_string())
                 .with_duration(start_time.elapsed())

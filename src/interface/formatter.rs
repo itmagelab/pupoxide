@@ -74,8 +74,10 @@ impl PrettyFormatter {
             duration_str.dimmed()
         );
 
-        if let Some(msg) = &report.message {
-            line.push_str(&format!("\n   {}", msg.red()));
+        if report.status == ResourceStatus::Failed {
+            if let Some(msg) = &report.message {
+                line.push_str(&format!("\n   {}", msg.red()));
+            }
         }
         line
     }
