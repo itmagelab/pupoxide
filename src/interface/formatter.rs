@@ -79,15 +79,13 @@ impl PrettyFormatter {
                 if let Some((first_line, rest)) = msg.split_once('\n') {
                     let system_msg = first_line.strip_suffix(':').unwrap_or(first_line);
                     line.push_str(&format!(
-                        "\n   {}: {}\n{}",
-                        "Error".red().bold(),
+                        "\n   {}\n{}",
                         system_msg.red().bold(),
                         rest.red()
                     ));
                 } else {
                     line.push_str(&format!(
-                        "\n   {}: {}",
-                        "Error".red().bold(),
+                        "\n   {}",
                         msg.red().bold()
                     ));
                 }
