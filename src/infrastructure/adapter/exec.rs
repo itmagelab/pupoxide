@@ -102,7 +102,7 @@ impl ExecAdapter {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(anyhow::anyhow!(
-                "Command '{}' failed with exit code {:?}: {}",
+                "Command '{}' failed with exit code {:?}:\n{}",
                 exec.command,
                 output.status.code(),
                 stderr
