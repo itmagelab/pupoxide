@@ -83,3 +83,89 @@ async fn test_package_provider_mapping() {
         panic!("Expected PackageResource");
     }
 }
+
+#[tokio::test]
+async fn test_package_provider_mapping_yum() {
+    let engine = PupoxideEngine::new(None);
+
+    // Test CentOS mapping to yum
+    let mut facts = pupoxide::domain::Facts::new();
+    facts.insert("os_family".to_string(), "CentOS".to_string());
+
+    let manifest = r#"stdlib::pkg("nginx", #{})"#;
+
+    let dir = tempdir().unwrap();
+    let temp_file = dir.path().join("manifest.rhai");
+    std::fs::write(&temp_file, manifest).unwrap();
+
+    let catalog = engine
+        .run_manifest(
+            temp_file,
+            "localhost".to_string(),
+            "local".to_string(),
+            facts,
+        )
+        .unwrap();
+
+    let resources = catalog.resources();
+    let res = resources.first().unwrap();
+    if let Resource::Package(pkg) = res {
+        assert_eq!(pkg.name, "nginx");
+        assert_eq!(pkg.provider, "yum");
+        assert_eq!(pkg.mutex, Some("yum".to_string()));
+    } else {
+        panic!("Expected PackageResource");
+    }
+}
+
+#[tokio::test]
+async fn test_apt_and_yum_providers_fail_fast_on_macos() {
+    use pupoxide::domain::resource::ResourceProvider;
+    use pupoxide::infrastructure::PackageAdapter;
+    use pupoxide::domain::resource::{PackageResource, Ensure};
+
+    let adapter = PackageAdapter::default();
+
+    // 1. Check apt package fail fast
+    let apt_res = Resource::Package(PackageResource {
+        id: "Package[git]".to_string(),
+        name: "git".to_string(),
+        ensure: Ensure::Present,
+        provider: "apt".to_string(),
+        dependencies: vec![],
+        source_context: None,
+        mutex: Some("apt".to_string()),
+    });
+
+    let res = adapter.get_state(&apt_res, false).await;
+    
+    // On macOS, dpkg is missing, so it must return Err with fail fast message
+    #[cfg(target_os = "macos")]
+    {
+        assert!(res.is_err());
+        let err_msg = res.err().unwrap().to_string();
+        assert!(err_msg.contains("dpkg/apt-get not found") || err_msg.contains("dpkg command not found"));
+    }
+
+    // 2. Check yum package fail fast
+    let yum_res = Resource::Package(PackageResource {
+        id: "Package[git]".to_string(),
+        name: "git".to_string(),
+        ensure: Ensure::Present,
+        provider: "yum".to_string(),
+        dependencies: vec![],
+        source_context: None,
+        mutex: Some("yum".to_string()),
+    });
+
+    let res_yum = adapter.get_state(&yum_res, false).await;
+
+    // On macOS, rpm is missing, so it must return Err with fail fast message
+    #[cfg(target_os = "macos")]
+    {
+        assert!(res_yum.is_err());
+        let err_msg = res_yum.err().unwrap().to_string();
+        assert!(err_msg.contains("rpm/yum not found") || err_msg.contains("rpm command not found"));
+    }
+}
+

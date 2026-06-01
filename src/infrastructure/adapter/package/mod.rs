@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub mod brew;
+pub mod apt;
+pub mod yum;
 
 #[async_trait]
 pub trait PackageProvider: Send + Sync {
@@ -27,7 +29,10 @@ pub struct PackageAdapter {
 
 impl Default for PackageAdapter {
     fn default() -> Self {
-        Self::new().with_provider(Arc::new(brew::BrewProvider))
+        Self::new()
+            .with_provider(Arc::new(brew::BrewProvider))
+            .with_provider(Arc::new(apt::AptProvider))
+            .with_provider(Arc::new(yum::YumProvider))
     }
 }
 

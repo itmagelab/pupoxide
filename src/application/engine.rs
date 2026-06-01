@@ -158,6 +158,7 @@ impl ExecutionContext {
             "Darwin" | "macOS" => "brew".to_string(),
             "Ubuntu" | "Debian" => "apt".to_string(),
             "Linux" => "apt".to_string(),
+            "RedHat" | "CentOS" | "Fedora" | "AlmaLinux" | "Rocky" => "yum".to_string(),
             _ => "brew".to_string(),
         }
     }
