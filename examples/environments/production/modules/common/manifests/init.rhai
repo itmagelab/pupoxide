@@ -17,6 +17,14 @@ print(`Default package manager: ${pkg_manager}`);
 
 b::pkg(["htop", "wget"], #{ ensure: "present" });
 
+// Install curl using stdlib directly, demonstrating how to disable apt/yum cache updates
+stdlib::pkg("curl", #{
+    ensure: "present",
+    params: #{
+        update_cache: false
+    }
+});
+
 let dir = "/tmp/pupoxide/examples/cache";
 let timestamp_file = `${dir}/timestamp`;
 
