@@ -1,5 +1,5 @@
 # Stage 1: Build the application with BuildKit cache mounts
-FROM rust:1.81-slim AS builder
+FROM rust:slim AS builder
 
 WORKDIR /usr/src/pupoxide
 
