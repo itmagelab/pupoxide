@@ -4,40 +4,19 @@ use crate::domain::resource::{PackageResource, Resource};
 use rhai::{Engine, Map, Module, NativeCallContext};
 
 fn map_to_json(map: &Map) -> Option<serde_json::Value> {
-    let mut json_map = serde_json::Map::new();
-    for (k, v) in map.iter() {
-        let key = k.as_str();
-        if key == "ensure"
-            || key == "provider"
-            || key == "dependencies"
-            || key == "mutex"
-            || key == "require"
-        {
-            continue;
-        }
+    let mut clean_map = map.clone();
+    clean_map.remove("ensure");
+    clean_map.remove("provider");
+    clean_map.remove("dependencies");
+    clean_map.remove("mutex");
+    clean_map.remove("require");
 
-        if let Some(b) = v.clone().try_cast::<bool>() {
-            json_map.insert(key.to_string(), serde_json::Value::Bool(b));
-        } else if let Some(s) = v.clone().try_cast::<String>() {
-            json_map.insert(key.to_string(), serde_json::Value::String(s));
-        } else if let Some(i) = v.clone().try_cast::<i64>() {
-            json_map.insert(
-                key.to_string(),
-                serde_json::Value::Number(serde_json::Number::from(i)),
-            );
-        } else if let Some(f) = v.clone().try_cast::<f64>() {
-            let num_opt = serde_json::Number::from_f64(f);
-            if let Some(num) = num_opt {
-                json_map.insert(key.to_string(), serde_json::Value::Number(num));
-            }
-        }
+    if clean_map.is_empty() {
+        return None;
     }
 
-    if json_map.is_empty() {
-        None
-    } else {
-        Some(serde_json::Value::Object(json_map))
-    }
+    let dynamic = rhai::Dynamic::from(clean_map);
+    rhai::serde::from_dynamic::<serde_json::Value>(&dynamic).ok()
 }
 
 pub fn register(engine: &mut Engine) {
