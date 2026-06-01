@@ -6,11 +6,11 @@ WORKDIR /usr/src/pupoxide
 # Install build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
-# Build using bind mount for source and cache mounts for target and registry.
-# This prevents copying target/ folder and speeds up consecutive builds tremendously.
-RUN --mount=type=bind,source=.,target=. \
+# Copy sources from read-only bind mount, then compile using writable cache mounts
+RUN --mount=type=bind,source=.,target=/tmp/src \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/src/pupoxide/target \
+    cp -R /tmp/src/. . && \
     cargo build --release && \
     cp target/release/pupoxide /usr/local/bin/pupoxide
 
