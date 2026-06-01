@@ -1,14 +1,18 @@
-# Stage 1: Build the application
+# Stage 1: Build the application with BuildKit cache mounts
 FROM rust:1.81-slim AS builder
 
 WORKDIR /usr/src/pupoxide
-COPY . .
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
-# Build the release binary
-RUN cargo build --release
+# Build using bind mount for source and cache mounts for target and registry.
+# This prevents copying target/ folder and speeds up consecutive builds tremendously.
+RUN --mount=type=bind,source=.,target=. \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/src/pupoxide/target \
+    cargo build --release && \
+    cp target/release/pupoxide /usr/local/bin/pupoxide
 
 # Stage 2: Target environment for testing
 FROM ubuntu:24.04
@@ -25,7 +29,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the compiled binary from the builder stage
-COPY --from=builder /usr/src/pupoxide/target/release/pupoxide /usr/local/bin/pupoxide
+COPY --from=builder /usr/local/bin/pupoxide /usr/local/bin/pupoxide
 
 # Create configuration and environment structures for demonstration
 WORKDIR /app
