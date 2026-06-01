@@ -37,16 +37,16 @@ COPY examples/ /app/examples/
 
 # Create a simple demonstration entrypoint script
 RUN echo '#!/bin/bash\n\
-echo "============================================="\n\
-echo "      Welcome to Pupoxide PoC Environment     "\n\
-echo "============================================="\n\
-echo "Pupoxide version: $(pupoxide --version || echo "unknown")"\n\
-echo "Current OS Family: Ubuntu (apt/dpkg)"\n\
-echo ""\n\
-echo "You can test applying a manifest locally by running:"\n\
-echo "  pupoxide run --file /app/examples/environments/production/manifests/site.rhai"\n\
-echo ""\n\
-echo "Launching bash session..."\n\
-exec bash' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+    echo "============================================="\n\
+    echo "      Welcome to Pupoxide PoC Environment     "\n\
+    echo "============================================="\n\
+    echo "Pupoxide version: $(pupoxide --version || echo "unknown")"\n\
+    echo "Current OS Family: Ubuntu (apt/dpkg)"\n\
+    echo ""\n\
+    echo "You can test applying a manifest locally by running:"\n\
+    echo "  pupoxide run --file /app/examples/environments/production/manifests/site.rhai --show-unchanged"\n\
+    echo ""\n\
+    echo "Launching bash session..."\n\
+    exec bash' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]

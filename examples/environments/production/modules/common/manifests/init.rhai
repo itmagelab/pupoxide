@@ -25,6 +25,15 @@ stdlib::pkg("curl", #{
     }
 });
 
+// Install a specific version of a package, demonstrating version pinning
+stdlib::pkg("tar", #{
+    ensure: "present",
+    params: #{
+        update_cache: false,
+        version: "1.35+dfsg-3build1"
+    }
+});
+
 let dir = "/tmp/pupoxide/examples/cache";
 let timestamp_file = `${dir}/timestamp`;
 

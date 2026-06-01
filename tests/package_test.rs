@@ -218,3 +218,49 @@ async fn test_package_update_cache_dsl_parsing() {
         panic!("Expected PackageResource");
     }
 }
+
+#[tokio::test]
+async fn test_package_version_params_parsing() {
+    let engine = PupoxideEngine::new(None);
+    let facts = pupoxide::infrastructure::Facter::collect();
+
+    let manifest = r#"
+        stdlib::pkg("htop", #{ ensure: "present", params: #{ version: "3.3.0" } });
+        stdlib::pkg("wget", #{ ensure: "present", params: #{ version: "1.21.4", update_cache: false } });
+    "#;
+
+    let dir = tempdir().unwrap();
+    let temp_file = dir.path().join("manifest.rhai");
+    std::fs::write(&temp_file, manifest).unwrap();
+
+    let catalog = engine
+        .run_manifest(
+            temp_file,
+            "localhost".to_string(),
+            "local".to_string(),
+            facts,
+        )
+        .unwrap();
+
+    let resources = catalog.resources();
+    assert_eq!(resources.len(), 2);
+
+    let res1 = resources.first().unwrap();
+    if let Resource::Package(pkg) = res1 {
+        assert_eq!(pkg.name, "htop");
+        let params = pkg.params.as_ref().unwrap();
+        assert_eq!(params.get("version").unwrap().as_str(), Some("3.3.0"));
+    } else {
+        panic!("Expected PackageResource");
+    }
+
+    let res2 = resources.get(1).unwrap();
+    if let Resource::Package(pkg) = res2 {
+        assert_eq!(pkg.name, "wget");
+        let params = pkg.params.as_ref().unwrap();
+        assert_eq!(params.get("version").unwrap().as_str(), Some("1.21.4"));
+        assert_eq!(params.get("update_cache").unwrap().as_bool(), Some(false));
+    } else {
+        panic!("Expected PackageResource");
+    }
+}
