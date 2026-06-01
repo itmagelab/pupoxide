@@ -6,13 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::process::Command;
 
 #[derive(serde::Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct AptParams {
-    #[serde(default = "default_true")]
     pub update_cache: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for AptParams {
