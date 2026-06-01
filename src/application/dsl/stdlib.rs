@@ -23,6 +23,10 @@ pub fn register(engine: &mut Engine) {
             let mutex =
                 DslUtils::extract_string(&params, "mutex").unwrap_or_else(|| provider.clone());
 
+            let update_cache = params
+                .get("update_cache")
+                .and_then(|v| v.clone().try_cast::<bool>());
+
             let resource = Resource::Package(PackageResource {
                 id: format!("Package[{}]", name),
                 name,
@@ -31,6 +35,7 @@ pub fn register(engine: &mut Engine) {
                 dependencies,
                 mutex: Some(mutex),
                 source_context: exec_ctx.get_source_context(),
+                update_cache,
             });
 
             exec_ctx.add_resource(resource).map_err(|e| {

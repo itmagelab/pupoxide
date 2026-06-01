@@ -1,5 +1,5 @@
 use crate::domain::error::Result;
-use crate::domain::resource::{Ensure, Resource, ResourceProvider, ResourceState};
+use crate::domain::resource::{Ensure, Resource, ResourceProvider, ResourceState, PackageResource};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,13 +14,13 @@ pub trait PackageProvider: Send + Sync {
     fn name(&self) -> &str;
 
     /// Returns true if the package is currently installed
-    async fn is_installed(&self, package_name: &str) -> Result<bool>;
+    async fn is_installed(&self, resource: &PackageResource) -> Result<bool>;
 
     /// Installs the package
-    async fn install(&self, package_name: &str) -> Result<()>;
+    async fn install(&self, resource: &PackageResource) -> Result<()>;
 
     /// Uninstalls the package
-    async fn uninstall(&self, package_name: &str) -> Result<()>;
+    async fn uninstall(&self, resource: &PackageResource) -> Result<()>;
 }
 
 pub struct PackageAdapter {
@@ -31,8 +31,8 @@ impl Default for PackageAdapter {
     fn default() -> Self {
         Self::new()
             .with_provider(Arc::new(brew::BrewProvider))
-            .with_provider(Arc::new(apt::AptProvider))
-            .with_provider(Arc::new(yum::YumProvider))
+            .with_provider(Arc::new(apt::AptProvider::new()))
+            .with_provider(Arc::new(yum::YumProvider::new()))
     }
 }
 
@@ -65,7 +65,7 @@ impl ResourceProvider for PackageAdapter {
         match resource {
             Resource::Package(pkg) => {
                 let provider = self.get_provider(&pkg.provider).await?;
-                let is_installed = provider.is_installed(&pkg.name).await?;
+                let is_installed = provider.is_installed(pkg).await?;
                 let ensure = if is_installed {
                     Ensure::Present
                 } else {
@@ -81,16 +81,16 @@ impl ResourceProvider for PackageAdapter {
         match resource {
             Resource::Package(pkg) => {
                 let provider = self.get_provider(&pkg.provider).await?;
-                let is_installed = provider.is_installed(&pkg.name).await?;
+                let is_installed = provider.is_installed(pkg).await?;
 
                 match (&pkg.ensure, is_installed) {
                     (Ensure::Present, false) => {
                         tracing::info!(package = %pkg.name, provider = %pkg.provider, "Installing package");
-                        provider.install(&pkg.name).await
+                        provider.install(pkg).await
                     }
                     (Ensure::Absent, true) => {
                         tracing::info!(package = %pkg.name, provider = %pkg.provider, "Uninstalling package");
-                        provider.uninstall(&pkg.name).await
+                        provider.uninstall(pkg).await
                     }
                     _ => {
                         tracing::debug!(package = %pkg.name, ensure = ?pkg.ensure, "Package already in desired state");

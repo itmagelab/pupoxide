@@ -1,5 +1,6 @@
 use crate::domain::error::Result;
 use crate::infrastructure::adapter::package::PackageProvider;
+use crate::domain::resource::PackageResource;
 use async_trait::async_trait;
 use tokio::process::Command;
 
@@ -11,7 +12,8 @@ impl PackageProvider for BrewProvider {
         "brew"
     }
 
-    async fn is_installed(&self, package_name: &str) -> Result<bool> {
+    async fn is_installed(&self, resource: &PackageResource) -> Result<bool> {
+        let package_name = &resource.name;
         // brew list formula_name returns 0 if installed, non-zero otherwise
         let status = Command::new("brew")
             .arg("list")
@@ -28,7 +30,8 @@ impl PackageProvider for BrewProvider {
         Ok(status.success())
     }
 
-    async fn install(&self, package_name: &str) -> Result<()> {
+    async fn install(&self, resource: &PackageResource) -> Result<()> {
+        let package_name = &resource.name;
         let status = Command::new("brew")
             .arg("install")
             .arg(package_name)
@@ -48,7 +51,8 @@ impl PackageProvider for BrewProvider {
         Ok(())
     }
 
-    async fn uninstall(&self, package_name: &str) -> Result<()> {
+    async fn uninstall(&self, resource: &PackageResource) -> Result<()> {
+        let package_name = &resource.name;
         let status = Command::new("brew")
             .arg("uninstall")
             .arg(package_name)

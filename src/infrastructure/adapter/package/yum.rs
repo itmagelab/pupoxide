@@ -1,9 +1,49 @@
 use crate::domain::error::Result;
 use crate::infrastructure::adapter::package::PackageProvider;
+use crate::domain::resource::PackageResource;
 use async_trait::async_trait;
 use tokio::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-pub struct YumProvider;
+pub struct YumProvider {
+    update_performed: AtomicBool,
+}
+
+impl Default for YumProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl YumProvider {
+    pub fn new() -> Self {
+        Self {
+            update_performed: AtomicBool::new(false),
+        }
+    }
+
+    async fn perform_update(&self) -> Result<()> {
+        if !self.update_performed.load(Ordering::SeqCst) {
+            tracing::info!("Executing yum makecache before package installation");
+            let status = Command::new("yum")
+                .arg("makecache")
+                .status()
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to execute 'yum makecache': {}", e)
+                })?;
+
+            if !status.success() {
+                return Err(anyhow::anyhow!(
+                    "'yum makecache' failed with status: {:?}",
+                    status.code()
+                ));
+            }
+            self.update_performed.store(true, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+}
 
 #[async_trait]
 impl PackageProvider for YumProvider {
@@ -11,7 +51,8 @@ impl PackageProvider for YumProvider {
         "yum"
     }
 
-    async fn is_installed(&self, package_name: &str) -> Result<bool> {
+    async fn is_installed(&self, resource: &PackageResource) -> Result<bool> {
+        let package_name = &resource.name;
         tracing::debug!(package = %package_name, "Checking if yum package is installed");
 
         let status = Command::new("rpm")
@@ -32,7 +73,13 @@ impl PackageProvider for YumProvider {
         Ok(status.success())
     }
 
-    async fn install(&self, package_name: &str) -> Result<()> {
+    async fn install(&self, resource: &PackageResource) -> Result<()> {
+        let package_name = &resource.name;
+
+        if resource.update_cache.unwrap_or(true) {
+            self.perform_update().await?;
+        }
+
         tracing::info!(package = %package_name, "Executing yum install");
 
         let status = Command::new("yum")
@@ -55,7 +102,8 @@ impl PackageProvider for YumProvider {
         Ok(())
     }
 
-    async fn uninstall(&self, package_name: &str) -> Result<()> {
+    async fn uninstall(&self, resource: &PackageResource) -> Result<()> {
+        let package_name = &resource.name;
         tracing::info!(package = %package_name, "Executing yum remove");
 
         let status = Command::new("yum")

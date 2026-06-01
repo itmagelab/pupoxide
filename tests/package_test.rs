@@ -135,6 +135,7 @@ async fn test_apt_and_yum_providers_fail_fast_on_macos() {
         dependencies: vec![],
         source_context: None,
         mutex: Some("apt".to_string()),
+        update_cache: None,
     });
 
     let res = adapter.get_state(&apt_res, false).await;
@@ -156,6 +157,7 @@ async fn test_apt_and_yum_providers_fail_fast_on_macos() {
         dependencies: vec![],
         source_context: None,
         mutex: Some("yum".to_string()),
+        update_cache: None,
     });
 
     let res_yum = adapter.get_state(&yum_res, false).await;
@@ -166,6 +168,49 @@ async fn test_apt_and_yum_providers_fail_fast_on_macos() {
         assert!(res_yum.is_err());
         let err_msg = res_yum.err().unwrap().to_string();
         assert!(err_msg.contains("rpm/yum not found") || err_msg.contains("rpm command not found"));
+    }
+}
+
+#[tokio::test]
+async fn test_package_update_cache_dsl_parsing() {
+    let engine = PupoxideEngine::new(None);
+    let facts = pupoxide::infrastructure::Facter::collect();
+
+    let manifest = r#"
+        stdlib::pkg("htop", #{ ensure: "present", update_cache: false });
+        stdlib::pkg("wget", #{ ensure: "present", update_cache: true });
+    "#;
+
+    let dir = tempdir().unwrap();
+    let temp_file = dir.path().join("manifest.rhai");
+    std::fs::write(&temp_file, manifest).unwrap();
+
+    let catalog = engine
+        .run_manifest(
+            temp_file,
+            "localhost".to_string(),
+            "local".to_string(),
+            facts,
+        )
+        .unwrap();
+
+    let resources = catalog.resources();
+    assert_eq!(resources.len(), 2);
+
+    let res1 = resources.first().unwrap();
+    if let Resource::Package(pkg) = res1 {
+        assert_eq!(pkg.name, "htop");
+        assert_eq!(pkg.update_cache, Some(false));
+    } else {
+        panic!("Expected PackageResource");
+    }
+
+    let res2 = resources.get(1).unwrap();
+    if let Resource::Package(pkg) = res2 {
+        assert_eq!(pkg.name, "wget");
+        assert_eq!(pkg.update_cache, Some(true));
+    } else {
+        panic!("Expected PackageResource");
     }
 }
 
