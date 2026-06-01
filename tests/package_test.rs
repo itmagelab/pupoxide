@@ -180,8 +180,8 @@ async fn test_package_update_cache_dsl_parsing() {
     let facts = pupoxide::infrastructure::Facter::collect();
 
     let manifest = r#"
-        stdlib::pkg("htop", #{ ensure: "present", update_cache: false });
-        stdlib::pkg("wget", #{ ensure: "present", update_cache: true });
+        stdlib::pkg("htop", #{ ensure: "present", params: #{ update_cache: false } });
+        stdlib::pkg("wget", #{ ensure: "present", params: #{ update_cache: true } });
     "#;
 
     let dir = tempdir().unwrap();

@@ -3,22 +3,6 @@ use crate::application::engine::ExecutionContext;
 use crate::domain::resource::{PackageResource, Resource};
 use rhai::{Engine, Map, Module, NativeCallContext};
 
-fn map_to_json(map: &Map) -> Option<serde_json::Value> {
-    let mut clean_map = map.clone();
-    clean_map.remove("ensure");
-    clean_map.remove("provider");
-    clean_map.remove("dependencies");
-    clean_map.remove("mutex");
-    clean_map.remove("require");
-
-    if clean_map.is_empty() {
-        return None;
-    }
-
-    let dynamic = rhai::Dynamic::from(clean_map);
-    rhai::serde::from_dynamic::<serde_json::Value>(&dynamic).ok()
-}
-
 pub fn register(engine: &mut Engine) {
     let mut module = Module::new();
 
@@ -39,7 +23,9 @@ pub fn register(engine: &mut Engine) {
             let mutex =
                 DslUtils::extract_string(&params, "mutex").unwrap_or_else(|| provider.clone());
 
-            let custom_params = map_to_json(&params);
+            let custom_params = params
+                .get("params")
+                .and_then(|p| rhai::serde::from_dynamic::<serde_json::Value>(p).ok());
 
             let resource = Resource::Package(PackageResource {
                 id: format!("Package[{}]", name),
