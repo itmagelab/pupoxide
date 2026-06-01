@@ -239,7 +239,6 @@ impl PupoxideEngineBuilder {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct PupoxideModuleResolver {
     pub module_path: Arc<Mutex<Option<PathBuf>>>,
@@ -552,4 +551,3 @@ impl PupoxideEngine {
         self.run_manifest(path, node_name, environment, facts)
     }
 }
-

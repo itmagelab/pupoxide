@@ -1,9 +1,25 @@
 use crate::domain::error::Result;
-use crate::infrastructure::adapter::package::PackageProvider;
 use crate::domain::resource::PackageResource;
+use crate::infrastructure::adapter::package::PackageProvider;
 use async_trait::async_trait;
-use tokio::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::process::Command;
+
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct AptParams {
+    #[serde(default = "default_true")]
+    pub update_cache: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for AptParams {
+    fn default() -> Self {
+        Self { update_cache: true }
+    }
+}
 
 pub struct AptProvider {
     update_performed: AtomicBool,
@@ -29,9 +45,7 @@ impl AptProvider {
                 .arg("update")
                 .status()
                 .await
-                .map_err(|e| {
-                    anyhow::anyhow!("Failed to execute 'apt-get update': {}", e)
-                })?;
+                .map_err(|e| anyhow::anyhow!("Failed to execute 'apt-get update': {}", e))?;
 
             if !status.success() {
                 return Err(anyhow::anyhow!(
@@ -54,7 +68,7 @@ impl PackageProvider for AptProvider {
     async fn is_installed(&self, resource: &PackageResource) -> Result<bool> {
         let package_name = &resource.name;
         tracing::debug!(package = %package_name, "Checking if apt package is installed");
-        
+
         let status = Command::new("dpkg")
             .arg("-s")
             .arg(package_name)
@@ -76,7 +90,13 @@ impl PackageProvider for AptProvider {
     async fn install(&self, resource: &PackageResource) -> Result<()> {
         let package_name = &resource.name;
 
-        if resource.update_cache.unwrap_or(true) {
+        let apt_params: AptParams = match &resource.params {
+            Some(val) => serde_json::from_value(val.clone())
+                .map_err(|e| anyhow::anyhow!("Failed to parse AptParams: {}", e))?,
+            None => AptParams::default(),
+        };
+
+        if apt_params.update_cache {
             self.perform_update().await?;
         }
 
@@ -90,7 +110,11 @@ impl PackageProvider for AptProvider {
             .status()
             .await
             .map_err(|e| {
-                anyhow::anyhow!("Failed to execute 'apt-get install {}': {}", package_name, e)
+                anyhow::anyhow!(
+                    "Failed to execute 'apt-get install {}': {}",
+                    package_name,
+                    e
+                )
             })?;
 
         if !status.success() {

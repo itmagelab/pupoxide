@@ -1,5 +1,5 @@
-use crate::application::engine::CURRENT_EXEC_CTX;
 use crate::application::StashProvider;
+use crate::application::engine::CURRENT_EXEC_CTX;
 use rhai::{Dynamic, Engine};
 use std::sync::Arc;
 
@@ -18,7 +18,11 @@ pub fn register(engine: &mut Engine, stash: Option<Arc<dyn StashProvider>>) {
     );
 }
 
-fn lookup_internal(stash: &Option<Arc<dyn StashProvider>>, key: String, default_val: Option<Dynamic>) -> Dynamic {
+fn lookup_internal(
+    stash: &Option<Arc<dyn StashProvider>>,
+    key: String,
+    default_val: Option<Dynamic>,
+) -> Dynamic {
     let exec_ctx =
         CURRENT_EXEC_CTX.with(|ctx| ctx.borrow().clone().expect("Execution context must be set"));
 

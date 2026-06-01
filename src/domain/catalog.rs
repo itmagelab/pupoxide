@@ -199,7 +199,10 @@ impl Catalog {
         visited.insert(idx, new_idx);
 
         // Copy edges (dependencies)
-        for edge in self.graph.edges_directed(idx, petgraph::Direction::Incoming) {
+        for edge in self
+            .graph
+            .edges_directed(idx, petgraph::Direction::Incoming)
+        {
             let source_node_idx = edge.source();
             let new_source_idx = self.copy_recursive(source_node_idx, target, visited)?;
             target.graph.add_edge(new_source_idx, new_idx, ());
@@ -239,7 +242,8 @@ mod tests {
 
         // Helper to find index in sorted vector without unwrap
         let pos = |id: &str| -> Result<usize> {
-            sorted.iter()
+            sorted
+                .iter()
                 .position(|r| r.id() == id)
                 .ok_or_else(|| anyhow::anyhow!("Resource {} not found", id))
         };
@@ -270,7 +274,9 @@ mod tests {
             let err_msg = e.to_string();
             assert!(err_msg.contains("Circular dependency detected"));
         } else {
-            return Err(anyhow::anyhow!("Expected topological sort to fail with circular dependency error"));
+            return Err(anyhow::anyhow!(
+                "Expected topological sort to fail with circular dependency error"
+            ));
         }
         Ok(())
     }
@@ -301,7 +307,8 @@ mod tests {
         // Verify that dependencies are properly reconstructed in the branch catalog
         let b_sorted = branch.topological_sort()?;
         let pos = |id: &str| -> Result<usize> {
-            b_sorted.iter()
+            b_sorted
+                .iter()
                 .position(|r| r.id() == id)
                 .ok_or_else(|| anyhow::anyhow!("Resource {} not found", id))
         };
@@ -329,4 +336,3 @@ mod tests {
         Ok(())
     }
 }
-

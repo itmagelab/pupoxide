@@ -149,8 +149,8 @@ pub struct PackageResource {
     pub source_context: Option<SourceContext>,
     /// Optional mutex group to serialize execution.
     pub mutex: Option<String>,
-    /// Whether to update the package cache before installation.
-    pub update_cache: Option<bool>,
+    /// Optional provider-specific parameters as a JSON object.
+    pub params: Option<serde_json::Value>,
 }
 
 /// Represents any configurable system component managed by Pupoxide.

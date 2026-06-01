@@ -77,16 +77,9 @@ impl PrettyFormatter {
         if let (&ResourceStatus::Failed, Some(msg)) = (&report.status, &report.message) {
             if let Some((first_line, rest)) = msg.split_once('\n') {
                 let system_msg = first_line.strip_suffix(':').unwrap_or(first_line);
-                line.push_str(&format!(
-                    "\n   {}\n{}",
-                    system_msg.red().bold(),
-                    rest.red()
-                ));
+                line.push_str(&format!("\n   {}\n{}", system_msg.red().bold(), rest.red()));
             } else {
-                line.push_str(&format!(
-                    "\n   {}",
-                    msg.red().bold()
-                ));
+                line.push_str(&format!("\n   {}", msg.red().bold()));
             }
         }
         line

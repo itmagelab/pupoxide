@@ -3,6 +3,43 @@ use crate::application::engine::ExecutionContext;
 use crate::domain::resource::{PackageResource, Resource};
 use rhai::{Engine, Map, Module, NativeCallContext};
 
+fn map_to_json(map: &Map) -> Option<serde_json::Value> {
+    let mut json_map = serde_json::Map::new();
+    for (k, v) in map.iter() {
+        let key = k.as_str();
+        if key == "ensure"
+            || key == "provider"
+            || key == "dependencies"
+            || key == "mutex"
+            || key == "require"
+        {
+            continue;
+        }
+
+        if let Some(b) = v.clone().try_cast::<bool>() {
+            json_map.insert(key.to_string(), serde_json::Value::Bool(b));
+        } else if let Some(s) = v.clone().try_cast::<String>() {
+            json_map.insert(key.to_string(), serde_json::Value::String(s));
+        } else if let Some(i) = v.clone().try_cast::<i64>() {
+            json_map.insert(
+                key.to_string(),
+                serde_json::Value::Number(serde_json::Number::from(i)),
+            );
+        } else if let Some(f) = v.clone().try_cast::<f64>() {
+            let num_opt = serde_json::Number::from_f64(f);
+            if let Some(num) = num_opt {
+                json_map.insert(key.to_string(), serde_json::Value::Number(num));
+            }
+        }
+    }
+
+    if json_map.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(json_map))
+    }
+}
+
 pub fn register(engine: &mut Engine) {
     let mut module = Module::new();
 
@@ -23,9 +60,7 @@ pub fn register(engine: &mut Engine) {
             let mutex =
                 DslUtils::extract_string(&params, "mutex").unwrap_or_else(|| provider.clone());
 
-            let update_cache = params
-                .get("update_cache")
-                .and_then(|v| v.clone().try_cast::<bool>());
+            let custom_params = map_to_json(&params);
 
             let resource = Resource::Package(PackageResource {
                 id: format!("Package[{}]", name),
@@ -35,7 +70,7 @@ pub fn register(engine: &mut Engine) {
                 dependencies,
                 mutex: Some(mutex),
                 source_context: exec_ctx.get_source_context(),
-                update_cache,
+                params: custom_params,
             });
 
             exec_ctx.add_resource(resource).map_err(|e| {

@@ -1,6 +1,6 @@
 use crate::domain::error::Result;
-use crate::infrastructure::adapter::package::PackageProvider;
 use crate::domain::resource::PackageResource;
+use crate::infrastructure::adapter::package::PackageProvider;
 use async_trait::async_trait;
 use tokio::process::Command;
 

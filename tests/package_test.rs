@@ -121,8 +121,8 @@ async fn test_package_provider_mapping_yum() {
 #[tokio::test]
 async fn test_apt_and_yum_providers_fail_fast_on_macos() {
     use pupoxide::domain::resource::ResourceProvider;
+    use pupoxide::domain::resource::{Ensure, PackageResource};
     use pupoxide::infrastructure::PackageAdapter;
-    use pupoxide::domain::resource::{PackageResource, Ensure};
 
     let adapter = PackageAdapter::default();
 
@@ -135,17 +135,20 @@ async fn test_apt_and_yum_providers_fail_fast_on_macos() {
         dependencies: vec![],
         source_context: None,
         mutex: Some("apt".to_string()),
-        update_cache: None,
+        params: None,
     });
 
     let res = adapter.get_state(&apt_res, false).await;
-    
+
     // On macOS, dpkg is missing, so it must return Err with fail fast message
     #[cfg(target_os = "macos")]
     {
         assert!(res.is_err());
         let err_msg = res.err().unwrap().to_string();
-        assert!(err_msg.contains("dpkg/apt-get not found") || err_msg.contains("dpkg command not found"));
+        assert!(
+            err_msg.contains("dpkg/apt-get not found")
+                || err_msg.contains("dpkg command not found")
+        );
     }
 
     // 2. Check yum package fail fast
@@ -157,7 +160,7 @@ async fn test_apt_and_yum_providers_fail_fast_on_macos() {
         dependencies: vec![],
         source_context: None,
         mutex: Some("yum".to_string()),
-        update_cache: None,
+        params: None,
     });
 
     let res_yum = adapter.get_state(&yum_res, false).await;
@@ -200,7 +203,8 @@ async fn test_package_update_cache_dsl_parsing() {
     let res1 = resources.first().unwrap();
     if let Resource::Package(pkg) = res1 {
         assert_eq!(pkg.name, "htop");
-        assert_eq!(pkg.update_cache, Some(false));
+        let params = pkg.params.as_ref().unwrap();
+        assert_eq!(params.get("update_cache").unwrap().as_bool(), Some(false));
     } else {
         panic!("Expected PackageResource");
     }
@@ -208,9 +212,9 @@ async fn test_package_update_cache_dsl_parsing() {
     let res2 = resources.get(1).unwrap();
     if let Resource::Package(pkg) = res2 {
         assert_eq!(pkg.name, "wget");
-        assert_eq!(pkg.update_cache, Some(true));
+        let params = pkg.params.as_ref().unwrap();
+        assert_eq!(params.get("update_cache").unwrap().as_bool(), Some(true));
     } else {
         panic!("Expected PackageResource");
     }
 }
-

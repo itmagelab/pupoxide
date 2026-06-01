@@ -1,11 +1,11 @@
 use crate::domain::error::Result;
-use crate::domain::resource::{Ensure, Resource, ResourceProvider, ResourceState, PackageResource};
+use crate::domain::resource::{Ensure, PackageResource, Resource, ResourceProvider, ResourceState};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub mod brew;
 pub mod apt;
+pub mod brew;
 pub mod yum;
 
 #[async_trait]

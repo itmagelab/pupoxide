@@ -1,9 +1,25 @@
 use crate::domain::error::Result;
-use crate::infrastructure::adapter::package::PackageProvider;
 use crate::domain::resource::PackageResource;
+use crate::infrastructure::adapter::package::PackageProvider;
 use async_trait::async_trait;
-use tokio::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::process::Command;
+
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct YumParams {
+    #[serde(default = "default_true")]
+    pub update_cache: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for YumParams {
+    fn default() -> Self {
+        Self { update_cache: true }
+    }
+}
 
 pub struct YumProvider {
     update_performed: AtomicBool,
@@ -29,9 +45,7 @@ impl YumProvider {
                 .arg("makecache")
                 .status()
                 .await
-                .map_err(|e| {
-                    anyhow::anyhow!("Failed to execute 'yum makecache': {}", e)
-                })?;
+                .map_err(|e| anyhow::anyhow!("Failed to execute 'yum makecache': {}", e))?;
 
             if !status.success() {
                 return Err(anyhow::anyhow!(
@@ -76,7 +90,13 @@ impl PackageProvider for YumProvider {
     async fn install(&self, resource: &PackageResource) -> Result<()> {
         let package_name = &resource.name;
 
-        if resource.update_cache.unwrap_or(true) {
+        let yum_params: YumParams = match &resource.params {
+            Some(val) => serde_json::from_value(val.clone())
+                .map_err(|e| anyhow::anyhow!("Failed to parse YumParams: {}", e))?,
+            None => YumParams::default(),
+        };
+
+        if yum_params.update_cache {
             self.perform_update().await?;
         }
 
