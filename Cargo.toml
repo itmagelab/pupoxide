@@ -13,11 +13,6 @@ categories = ["config", "os"]
 
 [dependencies]
 tokio = { version = "1.41", features = ["full"] }
-sea-orm = { version = "1.1", features = [
-  "sqlx-postgres",
-  "runtime-tokio-rustls",
-  "macros",
-] }
 thiserror = "2.0"
 anyhow = "1.0"
 tracing = "0.1"
