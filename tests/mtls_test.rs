@@ -86,6 +86,7 @@ async fn test_mtls_full_workflow() -> Result<()> {
         node_name.clone(),
         environment.clone(),
         Some(agent_cert_dir.clone()),
+        None,
     );
 
     // Test phase 1: Bootstrap (submits CSR request)
@@ -128,6 +129,7 @@ async fn test_mtls_full_workflow() -> Result<()> {
         "unauthorized-agent".to_string(),
         environment.clone(),
         Some(certs_dir.join("agents").join("unauthorized-agent")),
+        None,
     );
 
     // Bootstrap & Approve unauthorized agent so it gets a valid certificate

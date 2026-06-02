@@ -14,7 +14,10 @@ pub async fn handle_run(
     dry_run: bool,
     show_unchanged: bool,
 ) -> Result<()> {
-    let state_dir = PathBuf::from("/tmp/pupoxide");
+    let default_config_path = PathBuf::from("/etc/pupoxide/pupoxide.yaml");
+    let file_config = crate::infrastructure::Config::load_or_default(&default_config_path)?;
+
+    let state_dir = file_config.common.state_dir.clone();
     let state_store = crate::infrastructure::StateStore::new(state_dir.join("state"));
 
     let mut provider_registry = ProviderRegistry::new();
@@ -52,7 +55,10 @@ pub async fn handle_apply(
     show_unchanged: bool,
     config: PathBuf,
 ) -> Result<()> {
-    let state_dir = PathBuf::from("/tmp/pupoxide");
+    let config_file = config.join("pupoxide.yaml");
+    let file_config = crate::infrastructure::Config::load_or_default(&config_file)?;
+
+    let state_dir = file_config.common.state_dir.clone();
     let state_store = crate::infrastructure::StateStore::new(state_dir.join("state"));
 
     let mut provider_registry = ProviderRegistry::new();
@@ -107,13 +113,25 @@ pub async fn handle_master(
     default_config: PathBuf,
 ) -> Result<()> {
     let config_dir = config.unwrap_or(default_config);
+    let config_file = config_dir.join("pupoxide.yaml");
+    let file_config = crate::infrastructure::Config::load_or_default(&config_file)?;
 
-    tokio::fs::create_dir_all(&config_dir).await?;
+    let final_config_dir = if config_dir != std::path::Path::new("/etc/pupoxide") {
+        config_dir.clone()
+    } else {
+        file_config.master.config_dir.clone()
+    };
 
-    let loader = EnvironmentLoader::new(config_dir.clone());
+    tokio::fs::create_dir_all(&final_config_dir).await?;
+
+    let loader = EnvironmentLoader::new(final_config_dir.clone());
     let engine = PupoxideEngine::new(None);
 
-    let certs_dir = config_dir.join("certs");
+    let certs_dir = if file_config.master.certs_dir != std::path::Path::new("/etc/pupoxide/certs") {
+        file_config.master.certs_dir.clone()
+    } else {
+        final_config_dir.join("certs")
+    };
     tokio::fs::create_dir_all(&certs_dir).await?;
 
     let ca_cert_path = certs_dir.join("ca.pem");
@@ -143,7 +161,8 @@ pub async fn handle_master(
 
     match action {
         MasterAction::Start { port } => {
-            crate::interface::server::start_master(state, port).await?;
+            let port_val = port.unwrap_or(file_config.master.port);
+            crate::interface::server::start_master(state, port_val).await?;
         }
         MasterAction::Sign { node } => {
             let request = state.bootstrap_manager.get_request(&node).await?;
@@ -223,9 +242,9 @@ pub async fn handle_master(
 }
 
 pub struct AgentOptions {
-    pub server: String,
-    pub node: String,
-    pub environment: String,
+    pub server: Option<String>,
+    pub node: Option<String>,
+    pub environment: Option<String>,
     pub bootstrap: bool,
     pub check: bool,
     pub check_timeout: u64,
@@ -234,12 +253,29 @@ pub struct AgentOptions {
     pub cert_dir: Option<PathBuf>,
 }
 
-pub async fn handle_agent(opts: AgentOptions) -> Result<()> {
+pub async fn handle_agent(opts: AgentOptions, config_dir: PathBuf) -> Result<()> {
+    let config_file = config_dir.join("pupoxide.yaml");
+    let file_config = crate::infrastructure::Config::load_or_default(&config_file)?;
+
+    let server = opts.server.unwrap_or(file_config.agent.server_url);
+    let node = opts.node.unwrap_or(file_config.agent.node_name);
+    let environment = opts.environment.unwrap_or(file_config.agent.environment);
+
+    let dry_run = opts.dry_run || file_config.agent.dry_run;
+    let show_unchanged = opts.show_unchanged || file_config.agent.show_unchanged;
+
+    let cert_dir = opts.cert_dir
+        .or(file_config.agent.cert_dir)
+        .unwrap_or_else(|| config_dir.join("agents").join(&node));
+
+    let state_dir = Some(file_config.common.state_dir.clone());
+
     let agent = crate::interface::agent::PupoxideAgent::new(
-        opts.server,
-        opts.node,
-        opts.environment,
-        opts.cert_dir,
+        server,
+        node,
+        environment,
+        Some(cert_dir),
+        state_dir,
     );
 
     if opts.check {
@@ -247,7 +283,7 @@ pub async fn handle_agent(opts: AgentOptions) -> Result<()> {
     } else if opts.bootstrap {
         agent.bootstrap().await?;
     } else {
-        agent.run(opts.dry_run, opts.show_unchanged).await?;
+        agent.run(dry_run, show_unchanged).await?;
     }
     Ok(())
 }

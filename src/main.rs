@@ -66,6 +66,7 @@ async fn main() -> Result<()> {
                     show_unchanged,
                     cert_dir,
                 },
+                cli.config,
             )
             .await?;
         }

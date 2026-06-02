@@ -56,11 +56,11 @@ pub enum Commands {
     /// Start the Pupoxide Agent
     Agent {
         #[arg(short, long)]
-        server: String,
+        server: Option<String>,
         #[arg(short, long)]
-        node: String,
+        node: Option<String>,
         #[arg(short, long)]
-        environment: String,
+        environment: Option<String>,
 
         /// Bootstrap agent with the master (submit CSR request)
         #[arg(long, default_value = "false")]
@@ -114,8 +114,8 @@ pub enum Commands {
 pub enum MasterAction {
     /// Start the Master server
     Start {
-        #[arg(short, long, default_value = "8080")]
-        port: u16,
+        #[arg(short, long)]
+        port: Option<u16>,
     },
     /// Sign certificate for a pending bootstrap request
     Sign {

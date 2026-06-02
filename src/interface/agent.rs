@@ -12,6 +12,7 @@ pub struct PupoxideAgent {
     pub node_name: String,
     pub environment: String,
     pub cert_dir: PathBuf,
+    pub state_dir: PathBuf,
 }
 
 impl PupoxideAgent {
@@ -20,9 +21,13 @@ impl PupoxideAgent {
         node_name: String,
         environment: String,
         cert_dir: Option<PathBuf>,
+        state_dir: Option<PathBuf>,
     ) -> Self {
         let cert_dir = cert_dir
             .unwrap_or_else(|| PathBuf::from(format!("/etc/pupoxide/agents/{}", node_name)));
+
+        let state_dir = state_dir
+            .unwrap_or_else(|| PathBuf::from("/tmp/pupoxide"));
 
         let mut server_url = server_url;
         if server_url.starts_with("http://") {
@@ -36,6 +41,7 @@ impl PupoxideAgent {
             node_name,
             environment,
             cert_dir,
+            state_dir,
         }
     }
 
@@ -270,8 +276,7 @@ impl PupoxideAgent {
         );
 
         // 3. Apply changes with rollback support
-        let state_dir = std::path::PathBuf::from("/tmp/pupoxide");
-        let state_store = crate::infrastructure::StateStore::new(state_dir.join("state"));
+        let state_store = crate::infrastructure::StateStore::new(self.state_dir.join("state"));
 
         // Initialize provider registry with default adapters
         let mut provider_registry = crate::application::ProviderRegistry::new();
