@@ -24,6 +24,13 @@ impl PupoxideAgent {
         let cert_dir = cert_dir
             .unwrap_or_else(|| PathBuf::from(format!("/etc/pupoxide/agents/{}", node_name)));
 
+        let mut server_url = server_url;
+        if server_url.starts_with("http://") {
+            server_url = server_url.replacen("http://", "https://", 1);
+        } else if !server_url.starts_with("https://") {
+            server_url = format!("https://{}", server_url);
+        }
+
         Self {
             server_url,
             node_name,
@@ -82,7 +89,10 @@ impl PupoxideAgent {
             certificate: Some(self_signed_cert),
         };
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .context("Failed to build bootstrap client")?;
         let bootstrap_url = format!("{}/bootstrap", self.server_url);
 
         let response = client
@@ -137,7 +147,10 @@ impl PupoxideAgent {
             "Checking bootstrap approval status"
         );
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .context("Failed to build bootstrap check client")?;
         let check_url = format!("{}/bootstrap/check", self.server_url);
         let start = std::time::Instant::now();
         let timeout = Duration::from_secs(timeout_secs);
@@ -296,7 +309,7 @@ impl PupoxideAgent {
         &self,
         cert_path: &Path,
         key_path: &Path,
-        _ca_path: &Path,
+        ca_path: &Path,
         facts: crate::domain::facts::Facts,
     ) -> Result<Catalog> {
         // For mTLS, we use the self-signed certificate that matches the private key
@@ -318,6 +331,13 @@ impl PupoxideAgent {
             .await
             .context("Failed to read agent private key")?;
 
+        let ca_pem = tokio::fs::read_to_string(ca_path)
+            .await
+            .context("Failed to read CA certificate")?;
+
+        let ca_cert = reqwest::Certificate::from_pem(ca_pem.as_bytes())
+            .context("Failed to parse CA certificate for client trust")?;
+
         // Create client identity from cert and key
         // Combine certificate and key with proper newline separation for PEM format
         let combined_pem = format!("{}\n{}", cert_pem.trim_end(), key_pem.trim_end());
@@ -327,6 +347,7 @@ impl PupoxideAgent {
         // Create HTTP client with mTLS
         let client = reqwest::Client::builder()
             .identity(identity)
+            .add_root_certificate(ca_cert)
             .build()
             .context("Failed to build HTTP client with mTLS")?;
 

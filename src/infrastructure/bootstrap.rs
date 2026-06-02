@@ -17,7 +17,7 @@ impl BootstrapRequestManager {
     }
 
     /// Create a new bootstrap request from CSR
-    pub async fn create_request(&self, node_id: &str, csr: String) -> Result<BootstrapRequest> {
+    pub async fn create_request(&self, node_id: &str, csr: String, certificate: Option<String>) -> Result<BootstrapRequest> {
         // Create directory if not exists
         fs::create_dir_all(&self.requests_dir)
             .await
@@ -28,7 +28,7 @@ impl BootstrapRequestManager {
             csr,
             requested_at: Utc::now().timestamp(),
             status: "pending".to_string(),
-            certificate: None,
+            certificate,
         };
 
         // Save request to file
@@ -258,7 +258,7 @@ mod tests {
         let manager = BootstrapRequestManager::new(temp_dir.path().to_path_buf());
 
         let req = manager
-            .create_request("agent-01", "test_csr".to_string())
+            .create_request("agent-01", "test_csr".to_string(), Some("test_cert".to_string()))
             .await
             .expect("Failed to create request");
 
@@ -273,7 +273,7 @@ mod tests {
         let manager = BootstrapRequestManager::new(temp_dir.path().to_path_buf());
 
         manager
-            .create_request("agent-01", "test_csr".to_string())
+            .create_request("agent-01", "test_csr".to_string(), Some("test_cert".to_string()))
             .await
             .expect("Failed to create request");
 

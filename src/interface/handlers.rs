@@ -138,6 +138,7 @@ pub async fn handle_master(
         ca,
         bootstrap_manager,
         agent_registry,
+        certs_dir,
     };
 
     match action {
@@ -159,11 +160,13 @@ pub async fn handle_master(
                 );
             }
 
-            let cert_pem = state.ca.sign_csr(&node, 365)?;
+            let agent_cert = request.certificate.clone().ok_or_else(|| {
+                anyhow!("No certificate found in bootstrap request for node {}", node)
+            })?;
             state.bootstrap_manager.approve_request(&node).await?;
             state
                 .agent_registry
-                .register(&node, &node, cert_pem)
+                .register(&node, &node, agent_cert)
                 .await?;
 
             info!("Successfully signed and registered node: {}", node);
