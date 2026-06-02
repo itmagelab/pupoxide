@@ -131,4 +131,21 @@ pub enum MasterAction {
     },
     /// List pending bootstrap requests
     List,
+    /// Manage registered agents and their certificates
+    Agent {
+        #[command(subcommand)]
+        action: AgentAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AgentAction {
+    /// List all registered agents and their certificate details
+    List,
+    /// Revoke an agent's certificate (deny catalog requests)
+    Revoke {
+        /// Node ID of the agent to revoke
+        #[arg(short, long)]
+        node: String,
+    },
 }

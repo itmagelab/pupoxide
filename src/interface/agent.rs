@@ -26,8 +26,7 @@ impl PupoxideAgent {
         let cert_dir = cert_dir
             .unwrap_or_else(|| PathBuf::from(format!("/etc/pupoxide/agents/{}", node_name)));
 
-        let state_dir = state_dir
-            .unwrap_or_else(|| PathBuf::from("/tmp/pupoxide"));
+        let state_dir = state_dir.unwrap_or_else(|| PathBuf::from("/tmp/pupoxide"));
 
         let mut server_url = server_url;
         if server_url.starts_with("http://") {

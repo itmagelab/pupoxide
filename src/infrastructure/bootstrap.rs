@@ -251,6 +251,32 @@ impl AgentRegistryFs {
         info!(node_id = node_id, "Agent revoked");
         Ok(())
     }
+
+    /// List all registered agents
+    pub async fn list_agents(&self) -> Result<Vec<RegisteredAgent>> {
+        if !self.agents_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut agents = Vec::new();
+        let mut entries = fs::read_dir(&self.agents_dir)
+            .await
+            .map_err(|e| anyhow!("Failed to read agents directory: {}", e))?;
+
+        while let Some(entry) = entries.next_entry().await.map_err(|e| anyhow!("{}", e))? {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+                let content = fs::read_to_string(&path)
+                    .await
+                    .map_err(|e| anyhow!("Failed to read agent metadata file: {}", e))?;
+                let agent: RegisteredAgent = serde_json::from_str(&content)
+                    .map_err(|e| anyhow!("Failed to parse agent metadata: {}", e))?;
+                agents.push(agent);
+            }
+        }
+
+        Ok(agents)
+    }
 }
 
 #[cfg(test)]
@@ -315,6 +341,43 @@ mod tests {
             .expect("Failed to check");
 
         assert!(is_registered);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_list_agents() -> Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
+        let registry = AgentRegistryFs::new(temp_dir.path().to_path_buf());
+
+        // Should be empty initially
+        let agents = registry.list_agents().await?;
+        assert_eq!(agents.len(), 0);
+
+        // Register two agents
+        registry
+            .register("agent-01", "agent-01", "cert_pem_1".to_string())
+            .await?;
+        registry
+            .register("agent-02", "agent-02", "cert_pem_2".to_string())
+            .await?;
+
+        // List and verify
+        let agents = registry.list_agents().await?;
+        assert_eq!(agents.len(), 2);
+
+        let node_ids: Vec<String> = agents.iter().map(|a| a.node_id.clone()).collect();
+        assert!(node_ids.contains(&"agent-01".to_string()));
+        assert!(node_ids.contains(&"agent-02".to_string()));
+
+        // Revoke one and check
+        registry.revoke("agent-01").await?;
+        let agents = registry.list_agents().await?;
+        let a1 = agents
+            .iter()
+            .find(|a| a.node_id == "agent-01")
+            .ok_or_else(|| anyhow!("Agent agent-01 not found"))?;
+        assert!(!a1.is_active);
+
         Ok(())
     }
 }

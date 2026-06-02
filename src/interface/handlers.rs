@@ -1,7 +1,7 @@
 use crate::application::{
     EnvironmentLoader, ProviderRegistry, PupoxideEngine, execute_transaction,
 };
-use crate::interface::cli::MasterAction;
+use crate::interface::cli::{AgentAction, MasterAction};
 use crate::interface::utils::resolve_module_path;
 use anyhow::{Result, anyhow};
 use std::path::PathBuf;
@@ -237,6 +237,54 @@ pub async fn handle_master(
                 }
             }
         }
+        MasterAction::Agent { action } => match action {
+            AgentAction::List => {
+                let agents = state.agent_registry.list_agents().await?;
+
+                if agents.is_empty() {
+                    println!("No registered agents found");
+                } else {
+                    println!("\nRegistered Agents:");
+                    println!("{:-<90}", "");
+                    println!(
+                        "{:<20} {:<20} {:<20} {:<20} {:<10}",
+                        "Node ID", "CN", "Approved At", "Last Seen", "Active"
+                    );
+                    println!("{:-<90}", "");
+
+                    for agent in agents {
+                        let approved_dt =
+                            chrono::DateTime::<chrono::Utc>::from_timestamp(agent.approved_at, 0)
+                                .unwrap_or_default();
+                        let last_seen_str = if let Some(last_seen) = agent.last_seen {
+                            chrono::DateTime::<chrono::Utc>::from_timestamp(last_seen, 0)
+                                .unwrap_or_default()
+                                .format("%Y-%m-%d %H:%M:%S")
+                                .to_string()
+                        } else {
+                            "Never".to_string()
+                        };
+
+                        println!(
+                            "{:<20} {:<20} {:<20} {:<20} {:<10}",
+                            agent.node_id,
+                            agent.cert_cn,
+                            approved_dt.format("%Y-%m-%d %H:%M:%S"),
+                            last_seen_str,
+                            if agent.is_active { "Yes" } else { "No" }
+                        );
+                    }
+                }
+            }
+            AgentAction::Revoke { node } => {
+                state.agent_registry.revoke(&node).await?;
+                info!("Successfully revoked agent: {}", node);
+                println!(
+                    "✓ Agent '{}' certificate has been revoked. Access denied.",
+                    node
+                );
+            }
+        },
     }
     Ok(())
 }
@@ -264,7 +312,8 @@ pub async fn handle_agent(opts: AgentOptions, config_dir: PathBuf) -> Result<()>
     let dry_run = opts.dry_run || file_config.agent.dry_run;
     let show_unchanged = opts.show_unchanged || file_config.agent.show_unchanged;
 
-    let cert_dir = opts.cert_dir
+    let cert_dir = opts
+        .cert_dir
         .or(file_config.agent.cert_dir)
         .unwrap_or_else(|| config_dir.join("agents").join(&node));
 
