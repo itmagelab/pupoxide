@@ -161,7 +161,10 @@ pub async fn handle_master(
             }
 
             let agent_cert = request.certificate.clone().ok_or_else(|| {
-                anyhow!("No certificate found in bootstrap request for node {}", node)
+                anyhow!(
+                    "No certificate found in bootstrap request for node {}",
+                    node
+                )
             })?;
             state.bootstrap_manager.approve_request(&node).await?;
             state

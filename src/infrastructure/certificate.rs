@@ -29,10 +29,12 @@ impl CertificateAuthority {
         let subject_alt_names = vec!["pupoxide-ca".to_string()];
         let mut params = CertificateParams::new(subject_alt_names);
         params.distinguished_name = rcgen::DistinguishedName::new();
-        params.distinguished_name.push(rcgen::DnType::CommonName, "pupoxide-ca");
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, "pupoxide-ca");
         params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-        let certificate = Certificate::from_params(params)
-            .context("Failed to generate CA certificate")?;
+        let certificate =
+            Certificate::from_params(params).context("Failed to generate CA certificate")?;
 
         let pem_cert = certificate
             .serialize_pem()
@@ -54,14 +56,16 @@ impl CertificateAuthority {
 
         let pem_key = std::fs::read_to_string(key_path).context("Failed to read CA private key")?;
 
-        let key_pair = rcgen::KeyPair::from_pem(&pem_key)
-            .context("Failed to parse CA private key")?;
+        let key_pair =
+            rcgen::KeyPair::from_pem(&pem_key).context("Failed to parse CA private key")?;
 
         // Reconstruct the certificate object from the private key
         let subject_alt_names = vec!["pupoxide-ca".to_string()];
         let mut params = CertificateParams::new(subject_alt_names);
         params.distinguished_name = rcgen::DistinguishedName::new();
-        params.distinguished_name.push(rcgen::DnType::CommonName, "pupoxide-ca");
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, "pupoxide-ca");
         params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
         params.key_pair = Some(key_pair);
         let certificate = Certificate::from_params(params)
@@ -101,7 +105,9 @@ impl CertificateAuthority {
         let mut agent_params = CertificateParams::new(subject_alt_names);
         agent_params.is_ca = rcgen::IsCa::NoCa;
         agent_params.distinguished_name = rcgen::DistinguishedName::new();
-        agent_params.distinguished_name.push(rcgen::DnType::CommonName, node_id);
+        agent_params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, node_id);
 
         // Set validity period
         let now = OffsetDateTime::now_utc();
@@ -147,23 +153,28 @@ impl CertificateAuthority {
         let mut params = CertificateParams::new(subject_alt_names);
         params.is_ca = rcgen::IsCa::NoCa;
         params.distinguished_name = rcgen::DistinguishedName::new();
-        params.distinguished_name.push(rcgen::DnType::CommonName, hostname);
-        
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, hostname);
+
         // Add serverAuth extended key usage (required for HTTPS servers)
-        params.extended_key_usages.push(rcgen::ExtendedKeyUsagePurpose::ServerAuth);
-        
+        params
+            .extended_key_usages
+            .push(rcgen::ExtendedKeyUsagePurpose::ServerAuth);
+
         let now = OffsetDateTime::now_utc();
         params.not_before = now;
         params.not_after = now + Duration::days(365);
-        
+
         let cert = Certificate::from_params(params)
             .context("Failed to generate server certificate params")?;
-            
-        let cert_pem = cert.serialize_pem_with_signer(&self.certificate)
+
+        let cert_pem = cert
+            .serialize_pem_with_signer(&self.certificate)
             .context("Failed to serialize server certificate with CA signature")?;
-            
+
         let key_pem = cert.serialize_private_key_pem();
-        
+
         Ok((cert_pem, key_pem))
     }
 }
@@ -180,11 +191,13 @@ impl AgentCertificateRequest {
         let subject_alt_names = vec![node_id.to_string()];
         let mut params = CertificateParams::new(subject_alt_names);
         params.distinguished_name = rcgen::DistinguishedName::new();
-        params.distinguished_name.push(rcgen::DnType::CommonName, node_id);
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, node_id);
         params.is_ca = rcgen::IsCa::NoCa;
-        
-        let private_key = Certificate::from_params(params)
-            .context("Failed to generate agent private key")?;
+
+        let private_key =
+            Certificate::from_params(params).context("Failed to generate agent private key")?;
 
         let csr_pem = private_key
             .serialize_request_pem()
@@ -220,69 +233,42 @@ pub fn save_agent_certificate(
 
 /// Extracts the Common Name (CN) from DER-encoded X.509 certificate bytes.
 pub fn extract_cn_from_der(der: &[u8]) -> Result<String> {
-    // Look for Common Name OID: 2.5.4.3, which is 06 03 55 04 03 in DER
-    // We search from the end (rposition) because the Subject CN comes after Issuer CN
-    let cn_oid = [0x06, 0x03, 0x55, 0x04, 0x03];
-    let pos = der.windows(cn_oid.len())
-        .rposition(|window| window == cn_oid)
-        .ok_or_else(|| anyhow::anyhow!("Common Name OID not found in certificate"))?;
-        
-    let val_start = pos + cn_oid.len();
-    if val_start >= der.len() {
-        anyhow::bail!("Malformed certificate: no value after CN OID");
-    }
-    
-    let tag = der[val_start];
-    if tag != 0x0c && tag != 0x13 && tag != 0x16 && tag != 0x1e {
-        anyhow::bail!("Unsupported ASN.1 string tag for CN: 0x{:02x}", tag);
-    }
-    
-    let mut len_pos = val_start + 1;
-    if len_pos >= der.len() {
-        anyhow::bail!("Malformed certificate: missing length byte after CN tag");
-    }
-    
-    let first_len_byte = der[len_pos];
-    let len = if first_len_byte & 0x80 == 0 {
-        first_len_byte as usize
-    } else {
-        let num_bytes = (first_len_byte & 0x7f) as usize;
-        if num_bytes == 0 || num_bytes > 4 {
-            anyhow::bail!("Invalid ASN.1 length encoding");
-        }
-        let mut parsed_len = 0usize;
-        for _ in 0..num_bytes {
-            len_pos += 1;
-            if len_pos >= der.len() {
-                anyhow::bail!("Malformed certificate: unexpected EOF in length bytes");
+    use x509_cert::Certificate;
+    use x509_cert::der::{Decode, asn1::ObjectIdentifier};
+
+    // OID for Common Name (2.5.4.3)
+    const CN_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.4.3");
+
+    let cert = Certificate::from_der(der)
+        .map_err(|e| anyhow::anyhow!("Failed to parse DER certificate: {}", e))?;
+
+    for rdn in cert.tbs_certificate.subject.0.iter() {
+        for ava in rdn.0.iter() {
+            if ava.oid == CN_OID {
+                if let Ok(s) = ava
+                    .value
+                    .decode_as::<x509_cert::der::asn1::PrintableStringRef<'_>>()
+                {
+                    return Ok(s.as_str().to_string());
+                }
+                if let Ok(s) = ava
+                    .value
+                    .decode_as::<x509_cert::der::asn1::Utf8StringRef<'_>>()
+                {
+                    return Ok(s.as_str().to_string());
+                }
+                if let Ok(s) = ava
+                    .value
+                    .decode_as::<x509_cert::der::asn1::Ia5StringRef<'_>>()
+                {
+                    return Ok(s.as_str().to_string());
+                }
+                anyhow::bail!("Unsupported ASN.1 string type for CN");
             }
-            parsed_len = (parsed_len << 8) | (der[len_pos] as usize);
         }
-        parsed_len
-    };
-    
-    let str_start = len_pos + 1;
-    let str_end = str_start + len;
-    if str_end > der.len() {
-        anyhow::bail!("Malformed certificate: string length exceeds DER size");
     }
-    
-    let bytes = &der[str_start..str_end];
-    let cn = match tag {
-        0x0c | 0x13 | 0x16 => String::from_utf8(bytes.to_vec())
-            .map_err(|e| anyhow::anyhow!("Failed to decode CN string: {}", e))?,
-        0x1e => {
-            let mut u16_chars = Vec::new();
-            for chunk in bytes.chunks_exact(2) {
-                u16_chars.push(u16::from_be_bytes([chunk[0], chunk[1]]));
-            }
-            String::from_utf16(&u16_chars)
-                .map_err(|e| anyhow::anyhow!("Failed to decode BMP CN string: {}", e))?
-        }
-        _ => anyhow::bail!("Unsupported string tag"),
-    };
-    
-    Ok(cn)
+
+    anyhow::bail!("Common Name (CN) not found in certificate")
 }
 
 /// Extracts the Common Name (CN) from PEM-encoded X.509 certificate string.
@@ -291,7 +277,8 @@ pub fn extract_cn_from_pem(pem: &str) -> Result<String> {
     let certs = rustls_pemfile::certs(&mut reader)
         .collect::<std::result::Result<Vec<_>, _>>()
         .context("Failed to parse PEM certificate")?;
-    let first_cert = certs.first()
+    let first_cert = certs
+        .first()
         .ok_or_else(|| anyhow::anyhow!("No certificate found in PEM"))?;
     extract_cn_from_der(first_cert)
 }
@@ -328,7 +315,9 @@ mod tests {
     #[test]
     fn test_extract_cn() {
         let ca = CertificateAuthority::generate().expect("Failed to generate CA");
-        let agent_cert_pem = ca.sign_csr("my-agent-node", 365).expect("Failed to sign agent cert");
+        let agent_cert_pem = ca
+            .sign_csr("my-agent-node", 365)
+            .expect("Failed to sign agent cert");
         let cn = extract_cn_from_pem(&agent_cert_pem).expect("Failed to extract CN");
         assert_eq!(cn, "my-agent-node");
     }
@@ -336,10 +325,12 @@ mod tests {
     #[test]
     fn test_generate_server_cert() {
         let ca = CertificateAuthority::generate().expect("Failed to generate CA");
-        let (server_cert, server_key) = ca.generate_server_cert("localhost").expect("Failed to generate server cert");
+        let (server_cert, server_key) = ca
+            .generate_server_cert("localhost")
+            .expect("Failed to generate server cert");
         assert!(server_cert.contains("BEGIN CERTIFICATE"));
         assert!(server_key.contains("BEGIN PRIVATE KEY"));
-        
+
         let cn = extract_cn_from_pem(&server_cert).expect("Failed to extract server CN");
         assert_eq!(cn, "localhost");
     }
@@ -347,9 +338,12 @@ mod tests {
     #[test]
     fn test_private_key_loading() {
         let ca = CertificateAuthority::generate().expect("Failed to generate CA");
-        let (_, server_key) = ca.generate_server_cert("localhost").expect("Failed to generate server cert");
+        let (_, server_key) = ca
+            .generate_server_cert("localhost")
+            .expect("Failed to generate server cert");
         let mut key_reader = std::io::BufReader::new(server_key.as_bytes());
-        let key_der = rustls_pemfile::private_key(&mut key_reader).expect("Failed to read private key")
+        let key_der = rustls_pemfile::private_key(&mut key_reader)
+            .expect("Failed to read private key")
             .expect("No private key found");
         let private_key = tokio_rustls::rustls::PrivateKey(key_der.secret_der().to_vec());
         assert!(!private_key.0.is_empty());

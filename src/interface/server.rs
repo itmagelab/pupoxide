@@ -17,9 +17,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
-use tokio_rustls::TlsAcceptor;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
+use tokio_rustls::TlsAcceptor;
 
 pub struct MasterState {
     pub engine: PupoxideEngine,
@@ -72,7 +72,8 @@ pub async fn start_master(state: MasterState, port: u16) -> anyhow::Result<()> {
     let server_cert_path = certs_dir.join("server.pem");
     let server_key_path = certs_dir.join("server.key");
 
-    let (server_cert_pem, server_key_pem) = if server_cert_path.exists() && server_key_path.exists() {
+    let (server_cert_pem, server_key_pem) = if server_cert_path.exists() && server_key_path.exists()
+    {
         (
             tokio::fs::read_to_string(&server_cert_path).await?,
             tokio::fs::read_to_string(&server_key_path).await?,
@@ -85,11 +86,12 @@ pub async fn start_master(state: MasterState, port: u16) -> anyhow::Result<()> {
     };
 
     let mut cert_reader = std::io::BufReader::new(server_cert_pem.as_bytes());
-    let cert_chain: Vec<tokio_rustls::rustls::Certificate> = rustls_pemfile::certs(&mut cert_reader)
-        .collect::<std::io::Result<Vec<_>>>()?
-        .into_iter()
-        .map(|c| tokio_rustls::rustls::Certificate(c.to_vec()))
-        .collect();
+    let cert_chain: Vec<tokio_rustls::rustls::Certificate> =
+        rustls_pemfile::certs(&mut cert_reader)
+            .collect::<std::io::Result<Vec<_>>>()?
+            .into_iter()
+            .map(|c| tokio_rustls::rustls::Certificate(c.to_vec()))
+            .collect();
 
     let mut key_reader = std::io::BufReader::new(server_key_pem.as_bytes());
     let key_der = rustls_pemfile::private_key(&mut key_reader)?
@@ -130,9 +132,12 @@ pub async fn start_master(state: MasterState, port: u16) -> anyhow::Result<()> {
             match acceptor.accept(stream).await {
                 Ok(tls_stream) => {
                     // Extract peer certificate info if present
-                    let client_id = if let Some(certs) = tls_stream.get_ref().1.peer_certificates() {
+                    let client_id = if let Some(certs) = tls_stream.get_ref().1.peer_certificates()
+                    {
                         if let Some(cert) = certs.first() {
-                            if let Ok(cn) = crate::infrastructure::certificate::extract_cn_from_der(&cert.0) {
+                            if let Ok(cn) =
+                                crate::infrastructure::certificate::extract_cn_from_der(&cert.0)
+                            {
                                 Some(ClientIdentity {
                                     cn,
                                     cert_der: cert.0.clone(),
@@ -147,19 +152,21 @@ pub async fn start_master(state: MasterState, port: u16) -> anyhow::Result<()> {
                         None
                     };
 
-                    let service = tower::service_fn(move |req: axum::http::Request<hyper::body::Incoming>| {
-                        let mut req = req.map(axum::body::Body::new);
-                        req.extensions_mut().insert(ConnectInfo(peer_addr));
-                        if let Some(ref identity) = client_id {
-                            req.extensions_mut().insert(identity.clone());
-                        }
+                    let service = tower::service_fn(
+                        move |req: axum::http::Request<hyper::body::Incoming>| {
+                            let mut req = req.map(axum::body::Body::new);
+                            req.extensions_mut().insert(ConnectInfo(peer_addr));
+                            if let Some(ref identity) = client_id {
+                                req.extensions_mut().insert(identity.clone());
+                            }
 
-                        let mut app_clone = app.clone();
-                        async move {
-                            use tower::Service;
-                            app_clone.call(req).await
-                        }
-                    });
+                            let mut app_clone = app.clone();
+                            async move {
+                                use tower::Service;
+                                app_clone.call(req).await
+                            }
+                        },
+                    );
 
                     let hyper_service = hyper_util::service::TowerToHyperService::new(service);
                     let io = TokioIo::new(tls_stream);
@@ -318,7 +325,10 @@ async fn get_catalog(
         );
         return Err(ServerError(
             StatusCode::FORBIDDEN,
-            format!("Access forbidden: certificate CN '{}' does not match node ID '{}'", client_id.cn, node),
+            format!(
+                "Access forbidden: certificate CN '{}' does not match node ID '{}'",
+                client_id.cn, node
+            ),
         ));
     }
 
@@ -338,14 +348,13 @@ async fn get_catalog(
         ))?;
 
     // 2. Verify certificate matches the registered certificate
-    let agent = state
-        .agent_registry
-        .get_agent(&node)
-        .await
-        .map_err(|e| {
-            error!(error = %e, node = %node, "Failed to get registered agent");
-            ServerError(StatusCode::FORBIDDEN, "Access forbidden: agent not registered".into())
-        })?;
+    let agent = state.agent_registry.get_agent(&node).await.map_err(|e| {
+        error!(error = %e, node = %node, "Failed to get registered agent");
+        ServerError(
+            StatusCode::FORBIDDEN,
+            "Access forbidden: agent not registered".into(),
+        )
+    })?;
 
     let mut reader = std::io::BufReader::new(agent.certificate_pem.as_bytes());
     let reg_certs = rustls_pemfile::certs(&mut reader)
@@ -355,11 +364,10 @@ async fn get_catalog(
             ServerError(StatusCode::INTERNAL_SERVER_ERROR, "Registry error".into())
         })?;
 
-    let reg_cert_der = reg_certs.first()
-        .ok_or_else(|| {
-            error!(node = %node, "Registered certificate is empty");
-            ServerError(StatusCode::INTERNAL_SERVER_ERROR, "Registry error".into())
-        })?;
+    let reg_cert_der = reg_certs.first().ok_or_else(|| {
+        error!(node = %node, "Registered certificate is empty");
+        ServerError(StatusCode::INTERNAL_SERVER_ERROR, "Registry error".into())
+    })?;
 
     if reg_cert_der.as_ref() != client_id.cert_der {
         error!(node = %node, "Client certificate does not match the registered certificate");
