@@ -1,0 +1,34 @@
+# Pupoxide Configuration Example
+# This file can be used to configure both Master and Agent.
+# By default, Pupoxide looks for this file in the configuration directory (e.g., /etc/pupoxide/pupoxide.yaml).
+# You can override the config file location using the --config <dir> flag.
+
+# Master (Server) Configuration
+master:
+  # Port the master server listens on
+  port: 8080
+  # Directory where Master CA and server certificates are stored
+  certs_dir: "./certs"
+  # Base directory for environments and modules config
+  config_dir: "."
+
+# Agent Configuration
+agent:
+  # URL of the Pupoxide Master server
+  server_url: "https://localhost:8080"
+  # Unique node name identifying this agent node
+  node_name: "agent-01"
+  # Environment to retrieve catalogs from
+  environment: "production"
+  # Directory where agent certificates are saved (mTLS credentials)
+  # By default, resolves to <config_dir>/agents/<node_name>
+  # cert_dir: "./agents/agent-01"
+  # Show unchanged resources in agent execution output
+  show_unchanged: false
+  # Run in dry-run mode without applying changes to the system
+  dry_run: false
+
+# Common Configuration
+common:
+  # Directory where transaction logs and local state are stored
+  state_dir: "./.pupoxide"

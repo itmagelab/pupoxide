@@ -21,7 +21,7 @@ pub struct CommonConfig {
 impl Default for CommonConfig {
     fn default() -> Self {
         Self {
-            state_dir: PathBuf::from("/tmp/pupoxide"),
+            state_dir: PathBuf::from(".pupoxide"),
         }
     }
 }
@@ -95,7 +95,7 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
         assert_eq!(config.master.port, 8080);
-        assert_eq!(config.common.state_dir, PathBuf::from("/tmp/pupoxide"));
+        assert_eq!(config.common.state_dir, PathBuf::from(".pupoxide"));
         assert_eq!(config.agent.node_name, "localhost");
     }
 
@@ -161,7 +161,7 @@ master:
             config.master.certs_dir,
             PathBuf::from("/etc/pupoxide/certs")
         );
-        assert_eq!(config.common.state_dir, PathBuf::from("/tmp/pupoxide"));
+        assert_eq!(config.common.state_dir, PathBuf::from(".pupoxide"));
         assert_eq!(config.agent.node_name, "localhost");
 
         Ok(())
