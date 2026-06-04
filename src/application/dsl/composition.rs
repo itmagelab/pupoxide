@@ -1,7 +1,7 @@
 use crate::application::engine::{ExecutionContext, InclusionType, ModuleHandle};
 use crate::domain::resource::{MetaKind, MetaResource, Resource};
 use rhai::{Dynamic, Engine, NativeCallContext};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tracing::warn;
 
@@ -19,6 +19,40 @@ fn lock_or_err<'a, T>(
     })
 }
 
+enum InclusionTarget<'a> {
+    Relative(&'a str),
+    Named(&'a str),
+}
+
+impl<'a> InclusionTarget<'a> {
+    fn parse(name: &'a str) -> Self {
+        let path = Path::new(name);
+        match path.components().next() {
+            Some(Component::CurDir) | Some(Component::ParentDir) => Self::Relative(name),
+            _ => Self::Named(name),
+        }
+    }
+}
+
+impl InclusionType {
+    /// Resolves the file path for the given inclusion type and name relative to the base path.
+    pub fn resolve_path(&self, base_path: &std::path::Path, name: &str) -> PathBuf {
+        match self {
+            InclusionType::Module => base_path.join(name).join("manifests").join("init.rhai"),
+            InclusionType::Role => base_path
+                .parent()
+                .unwrap_or(base_path)
+                .join("role")
+                .join(format!("{}.rhai", name)),
+            InclusionType::Profile => base_path
+                .parent()
+                .unwrap_or(base_path)
+                .join("profile")
+                .join(format!("{}.rhai", name)),
+        }
+    }
+}
+
 // Resolve the full path for an inclusion based on type and name
 fn resolve_inclusion_path(
     inc_type: InclusionType,
@@ -26,42 +60,29 @@ fn resolve_inclusion_path(
     current_path: &std::path::Path,
     base_path: Option<&std::path::Path>,
 ) -> std::result::Result<PathBuf, Box<rhai::EvalAltResult>> {
-    let full_path = if name.starts_with(".") {
-        // Relative path (e.g., import "./utils")
-        let mut p = current_path.parent().unwrap_or(current_path).join(name);
-        if p.extension().is_none() {
-            p.set_extension("rhai");
+    match InclusionTarget::parse(name) {
+        InclusionTarget::Relative(rel_path) => {
+            let mut p = current_path.parent().unwrap_or(current_path).join(rel_path);
+            if p.extension().is_none() {
+                p.set_extension("rhai");
+            }
+            Ok(p)
         }
-        p
-    } else {
-        // Module/Role/Profile path
-        let bp = base_path.ok_or_else(|| {
-            Box::new(rhai::EvalAltResult::ErrorRuntime(
-                format!(
-                    "Base path not set, cannot include '{}' ({:?})",
-                    name, inc_type
-                )
-                .into(),
-                rhai::Position::NONE,
-            ))
-        })?;
+        InclusionTarget::Named(named_name) => {
+            let bp = base_path.ok_or_else(|| {
+                Box::new(rhai::EvalAltResult::ErrorRuntime(
+                    format!(
+                        "Base path not set, cannot include '{}' ({:?})",
+                        named_name, inc_type
+                    )
+                    .into(),
+                    rhai::Position::NONE,
+                ))
+            })?;
 
-        match inc_type {
-            InclusionType::Module => bp.join(name).join("manifests").join("init.rhai"),
-            InclusionType::Role => bp
-                .parent()
-                .unwrap_or(bp)
-                .join("role")
-                .join(format!("{}.rhai", name)),
-            InclusionType::Profile => bp
-                .parent()
-                .unwrap_or(bp)
-                .join("profile")
-                .join(format!("{}.rhai", name)),
+            Ok(inc_type.resolve_path(bp, named_name))
         }
-    };
-
-    Ok(full_path)
+    }
 }
 
 pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
