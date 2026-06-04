@@ -32,38 +32,47 @@ pub enum InclusionType {
     Profile,
 }
 
+/// The mutable state of manifest evaluation, shared within the execution context.
+#[derive(Debug, Clone)]
+pub struct ExecutionState {
+    /// The catalog under construction.
+    pub catalog: Catalog,
+    /// Tracks modules that have already been included to prevent redundant evaluation.
+    pub included_modules: HashSet<String>,
+    /// Active hierarchical stack of inclusion paths.
+    pub module_stack: Vec<(InclusionType, String)>,
+    /// The currently active inclusion category.
+    pub current_inclusion_type: Option<InclusionType>,
+    /// Absolute path of the currently evaluating manifest.
+    pub current_path: PathBuf,
+    /// Maps Rhai source locations to topological ModuleStart nodes.
+    pub source_map: HashMap<String, String>,
+}
+
 /// The runtime context holding current catalog state, module call stacks, and collected facts.
 ///
 /// This context is dynamically accessed by DSL helper functions during Rhai execution.
 #[derive(Clone, Debug)]
 pub struct ExecutionContext {
-    /// The catalog under construction.
-    pub catalog: Arc<Mutex<Catalog>>,
-    /// Tracks modules that have already been included to prevent redundant evaluation.
-    pub included_modules: Arc<Mutex<HashSet<String>>>,
-    /// Active hierarchical stack of inclusion paths.
-    pub module_stack: Arc<Mutex<Vec<(InclusionType, String)>>>,
-    /// The currently active inclusion category.
-    pub current_inclusion_type: Arc<Mutex<Option<InclusionType>>>,
+    /// The shared mutable state of evaluation.
+    pub state: Arc<Mutex<ExecutionState>>,
     /// Collected system facts.
     pub facts: Arc<Facts>,
-    /// Absolute path of the currently evaluating manifest.
-    pub current_path: Arc<Mutex<PathBuf>>,
-    /// Maps Rhai source locations to topological ModuleStart nodes.
-    pub source_map: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl ExecutionContext {
     /// Creates a new `ExecutionContext` for the given node and environment.
     pub fn new(facts: Facts, path: PathBuf, node_name: String, environment: String) -> Self {
         Self {
-            catalog: Arc::new(Mutex::new(Catalog::new(node_name, environment))),
-            included_modules: Arc::new(Mutex::new(HashSet::new())),
-            module_stack: Arc::new(Mutex::new(Vec::new())),
-            current_inclusion_type: Arc::new(Mutex::new(None)),
+            state: Arc::new(Mutex::new(ExecutionState {
+                catalog: Catalog::new(node_name, environment),
+                included_modules: HashSet::new(),
+                module_stack: Vec::new(),
+                current_inclusion_type: None,
+                current_path: path,
+                source_map: HashMap::new(),
+            })),
             facts: Arc::new(facts),
-            current_path: Arc::new(Mutex::new(path)),
-            source_map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -84,11 +93,11 @@ impl ExecutionContext {
 
     /// Computes and returns the logical hierarchical location context (role, profile, module path).
     pub fn get_source_context(&self) -> Option<crate::domain::resource::SourceContext> {
-        let stack = self.module_stack.lock().ok()?;
+        let state = self.state.lock().ok()?;
         let mut context = crate::domain::resource::SourceContext::default();
         let mut modules = Vec::new();
 
-        for (inc_type, name) in stack.iter() {
+        for (inc_type, name) in state.module_stack.iter() {
             let mut normalized_name = name.strip_prefix("./").unwrap_or(name);
             normalized_name = normalized_name
                 .strip_suffix(".rhai")
@@ -116,33 +125,29 @@ impl ExecutionContext {
     ///
     /// Ensures architectural purity rules (e.g. preventing direct resources inside Roles).
     pub fn add_resource(&self, resource: Resource) -> Result<Resource> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to lock state: {}", e))?;
+
         // Enforce role constraints: Resources cannot be added directly in Roles
+        if state.current_inclusion_type == Some(InclusionType::Role)
+            && !matches!(resource, Resource::Meta(_))
         {
-            let current_type = self
-                .current_inclusion_type
-                .lock()
-                .map_err(|e| anyhow::anyhow!("Failed to lock current inclusion type: {}", e))?;
-            if *current_type == Some(InclusionType::Role) && !matches!(resource, Resource::Meta(_))
-            {
-                return Err(anyhow::anyhow!(
-                    "Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.",
-                    resource.id()
-                ));
-            }
+            return Err(anyhow::anyhow!(
+                "Technical resources like '{}' are NOT allowed directly in Roles. Roles must ONLY include Profiles.",
+                resource.id()
+            ));
         }
 
-        let mut catalog = self
-            .catalog
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock catalog: {}", e))?;
-        catalog.add_resource(resource.clone());
+        state.catalog.add_resource(resource.clone());
         Ok(resource)
     }
 
     /// Registers a dependency between two resources.
     pub fn add_dependency_between_ids(&self, lhs_id: &str, rhs_id: &str) {
-        if let Ok(mut catalog) = self.catalog.lock() {
-            let _ = catalog.add_dependency(lhs_id, rhs_id);
+        if let Ok(mut state) = self.state.lock() {
+            let _ = state.catalog.add_dependency(lhs_id, rhs_id);
         }
     }
 
@@ -268,11 +273,9 @@ impl PupoxideModuleResolver {
         exec_ctx: &ExecutionContext,
         pos: rhai::Position,
     ) -> std::result::Result<PathBuf, Box<rhai::EvalAltResult>> {
-        let current_p = exec_ctx
-            .current_path
-            .lock()
-            .expect("Failed to lock current path");
-        let parent_dir = current_p.parent().unwrap_or(&current_p);
+        let state = exec_ctx.state.lock().expect("Failed to lock state");
+        let current_p = &state.current_path;
+        let parent_dir = current_p.parent().unwrap_or(current_p);
 
         let full_path = if path.starts_with(".") {
             // Relative path (e.g., import "./utils")
@@ -334,14 +337,12 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
             end_id: format!("ModuleEnd[{}]", module_name),
         };
 
-        // 2. Create initial metadata resource to track module dependencies
-        {
-            let mut catalog = exec_ctx.catalog.lock().expect("Failed to lock catalog");
+        // 2. Prepare environment for module execution under a single lock
+        let (start_node_count, old_path) = {
+            let mut state = exec_ctx.state.lock().expect("Failed to lock state");
 
             let mut dependencies = Vec::new();
-            if let Ok(stack) = exec_ctx.module_stack.lock()
-                && let Some((parent_type, parent_name)) = stack.last()
-            {
+            if let Some((parent_type, parent_name)) = state.module_stack.last() {
                 dependencies.push(format!("{:?}Start[{}]", parent_type, parent_name));
             }
 
@@ -351,37 +352,27 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
                 dependencies: dependencies.clone(),
             });
 
-            catalog.add_resource(resource);
+            state.catalog.add_resource(resource);
             for dep in dependencies {
-                let _ = catalog.add_dependency(&dep, &handle.start_id);
+                let _ = state.catalog.add_dependency(&dep, &handle.start_id);
             }
-        };
 
-        // Track source to marker mapping
-        {
-            let mut s_map = exec_ctx
+            state
                 .source_map
-                .lock()
-                .expect("Failed to lock source map");
-            s_map.insert(module_name.clone(), handle.start_id.clone());
-        }
+                .insert(module_name.clone(), handle.start_id.clone());
 
-        // 3. Prepare environment for module execution
-        exec_ctx
-            .module_stack
-            .lock()
-            .expect("Failed to lock module stack")
-            .push((InclusionType::Module, module_name.clone()));
+            let start_node_count = state.catalog.graph.node_count();
 
-        let old_path = {
-            let mut current_p = exec_ctx
-                .current_path
-                .lock()
-                .expect("Failed to lock current path");
-            std::mem::replace(&mut *current_p, full_path.clone())
+            state
+                .module_stack
+                .push((InclusionType::Module, module_name.clone()));
+
+            let old_path = std::mem::replace(&mut state.current_path, full_path.clone());
+
+            (start_node_count, old_path)
         };
 
-        // 4. Compile and execute AST
+        // 3. Compile and execute AST (lock is released)
         let mut ast = engine.compile_file(full_path).map_err(|e| {
             Box::new(rhai::EvalAltResult::ErrorRuntime(
                 format!("Import compilation error '{}': {}", path, e).into(),
@@ -400,19 +391,10 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
 
         let eval_res = engine.eval_ast_with_scope::<Dynamic>(&mut scope, &ast);
 
-        // 5. Restore state after execution
-        {
-            let mut current_p = exec_ctx
-                .current_path
-                .lock()
-                .expect("Failed to lock current path");
-            *current_p = old_path;
-        }
-        exec_ctx
-            .module_stack
-            .lock()
-            .expect("Failed to lock module stack")
-            .pop();
+        // 4. Restore state after execution and add end marker under a single lock
+        let mut state = exec_ctx.state.lock().expect("Failed to lock state");
+        state.current_path = old_path;
+        state.module_stack.pop();
 
         let _ = eval_res.map_err(|e| {
             Box::new(rhai::EvalAltResult::ErrorRuntime(
@@ -421,30 +403,35 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
             ))
         })?;
 
-        // 6. Create final metadata resource that depends on all resources in module
-        {
-            let mut catalog = exec_ctx.catalog.lock().expect("Failed to lock catalog");
-
-            // We need to find resources that were added during this module evaluation.
-            // Simplified for now: just collect all resources and filter by source context if available.
-            // Actually, petgraph is better here.
-
-            // Fallback: depend on start marker
-            let end_deps = vec![handle.start_id.clone()];
-
-            let resource = Resource::Meta(crate::domain::resource::MetaResource {
-                id: handle.end_id.clone(),
-                kind: crate::domain::resource::MetaKind::ModuleEnd,
-                dependencies: end_deps.clone(),
-            });
-
-            catalog.add_resource(resource);
-            for dep in end_deps {
-                let _ = catalog.add_dependency(&dep, &handle.end_id);
+        // Create final metadata resource that depends on all resources added in the module
+        let current_count = state.catalog.graph.node_count();
+        let mut end_deps = Vec::new();
+        for i in start_node_count..current_count {
+            let idx = petgraph::graph::NodeIndex::new(i);
+            if let Some(res) = state.catalog.graph.node_weight(idx)
+                && res.id() != handle.start_id
+            {
+                end_deps.push(res.id().to_string());
             }
         }
+        if end_deps.is_empty() {
+            end_deps.push(handle.start_id.clone());
+        }
 
-        // 7. Create Rhai module to return
+        let resource = Resource::Meta(crate::domain::resource::MetaResource {
+            id: handle.end_id.clone(),
+            kind: crate::domain::resource::MetaKind::ModuleEnd,
+            dependencies: end_deps.clone(),
+        });
+
+        state.catalog.add_resource(resource);
+        for dep in end_deps {
+            let _ = state.catalog.add_dependency(&dep, &handle.end_id);
+        }
+
+        drop(state); // explicitly drop to release lock
+
+        // 5. Create Rhai module to return
         let mut module = rhai::Module::eval_ast_as_new(scope, &ast, engine)?;
         module.set_var("module_handle", handle);
 
@@ -488,13 +475,12 @@ impl PupoxideEngine {
 
         // Root manifest source mapping
         {
-            let mut s_map = exec_ctx
-                .source_map
-                .lock()
-                .expect("Failed to lock source map");
+            let mut state = exec_ctx.state.lock().expect("Failed to lock state");
             // Common root names in Rhai
-            s_map.insert("".to_string(), "Root".to_string());
-            s_map.insert("site".to_string(), "Root".to_string());
+            state.source_map.insert("".to_string(), "Root".to_string());
+            state
+                .source_map
+                .insert("site".to_string(), "Root".to_string());
         }
 
         let mut scope = Scope::new();
@@ -521,9 +507,10 @@ impl PupoxideEngine {
         let _ = eval_res.map_err(|e| anyhow::anyhow!("Rhai execution error: {}", e))?;
 
         let mut catalog = exec_ctx
-            .catalog
+            .state
             .lock()
-            .expect("Failed to lock catalog")
+            .expect("Failed to lock state")
+            .catalog
             .clone();
 
         // Ensure ID map is ready (though it should be for freshly built catalog)

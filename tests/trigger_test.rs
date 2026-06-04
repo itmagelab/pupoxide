@@ -1,8 +1,6 @@
 use pupoxide::application::{ProviderRegistry, execute_transaction};
 use pupoxide::domain::catalog::Catalog;
-use pupoxide::domain::resource::{
-    Ensure, ExecResource, FileResource, Resource,
-};
+use pupoxide::domain::resource::{Ensure, ExecResource, FileResource, Resource};
 use pupoxide::infrastructure::{ExecAdapter, FsAdapter, StateStore};
 use std::fs;
 use std::sync::Arc;
@@ -47,8 +45,14 @@ async fn test_trigger_refreshonly_not_executed_by_default() {
         .expect("Transaction failed");
 
     // Verify it was skipped/unchanged
-    let report = reports.iter().find(|r| r.resource_id == "Exec[test_refresh]").unwrap();
-    assert_eq!(report.status, pupoxide::domain::report::ResourceStatus::Unchanged);
+    let report = reports
+        .iter()
+        .find(|r| r.resource_id == "Exec[test_refresh]")
+        .unwrap();
+    assert_eq!(
+        report.status,
+        pupoxide::domain::report::ResourceStatus::Unchanged
+    );
     assert!(!output_file.exists());
 }
 
@@ -112,11 +116,23 @@ async fn test_trigger_notify_executes_refreshonly() {
         .expect("Transaction failed");
 
     // Verify both resources ran (status Applied)
-    let file_report = reports.iter().find(|r| r.resource_id.starts_with("File[")).unwrap();
-    assert_eq!(file_report.status, pupoxide::domain::report::ResourceStatus::Applied);
+    let file_report = reports
+        .iter()
+        .find(|r| r.resource_id.starts_with("File["))
+        .unwrap();
+    assert_eq!(
+        file_report.status,
+        pupoxide::domain::report::ResourceStatus::Applied
+    );
 
-    let exec_report = reports.iter().find(|r| r.resource_id == "Exec[test_refresh]").unwrap();
-    assert_eq!(exec_report.status, pupoxide::domain::report::ResourceStatus::Applied);
+    let exec_report = reports
+        .iter()
+        .find(|r| r.resource_id == "Exec[test_refresh]")
+        .unwrap();
+    assert_eq!(
+        exec_report.status,
+        pupoxide::domain::report::ResourceStatus::Applied
+    );
 
     // Verify output file exists and has correct content
     assert!(output_file.exists());
@@ -184,11 +200,23 @@ async fn test_trigger_subscribe_executes_refreshonly() {
         .expect("Transaction failed");
 
     // Verify both resources ran (status Applied)
-    let file_report = reports.iter().find(|r| r.resource_id.starts_with("File[")).unwrap();
-    assert_eq!(file_report.status, pupoxide::domain::report::ResourceStatus::Applied);
+    let file_report = reports
+        .iter()
+        .find(|r| r.resource_id.starts_with("File["))
+        .unwrap();
+    assert_eq!(
+        file_report.status,
+        pupoxide::domain::report::ResourceStatus::Applied
+    );
 
-    let exec_report = reports.iter().find(|r| r.resource_id == "Exec[test_refresh]").unwrap();
-    assert_eq!(exec_report.status, pupoxide::domain::report::ResourceStatus::Applied);
+    let exec_report = reports
+        .iter()
+        .find(|r| r.resource_id == "Exec[test_refresh]")
+        .unwrap();
+    assert_eq!(
+        exec_report.status,
+        pupoxide::domain::report::ResourceStatus::Applied
+    );
 
     // Verify output file exists and has correct content
     assert!(output_file.exists());

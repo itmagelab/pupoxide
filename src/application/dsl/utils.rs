@@ -43,23 +43,17 @@ impl DslUtils {
 
         // 1. Parent attribution based on Rhai source
         if let Some(src) = source {
-            let s_map = ctx
-                .source_map
-                .lock()
-                // SAFETY: Lock failure indicates a poisoned mutex, which is a fatal error.
-                .expect("Failed to lock source map");
-
-            // Try specific source mapping, then fallback to current module stack
-            if let Some(marker_id) = s_map.get(src) {
-                dependencies.push(marker_id.clone());
-            } else if let Some(stack_guard) = lock_or_warn(&ctx.module_stack, "module_stack")
-                && let Some((inc_type, curr_mod)) = stack_guard.last()
-            {
-                dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
+            if let Some(state) = lock_or_warn(&ctx.state, "state") {
+                // Try specific source mapping, then fallback to current module stack
+                if let Some(marker_id) = state.source_map.get(src) {
+                    dependencies.push(marker_id.clone());
+                } else if let Some((inc_type, curr_mod)) = state.module_stack.last() {
+                    dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
+                }
             }
-        } else if let Some(stack_guard) = lock_or_warn(&ctx.module_stack, "module_stack") {
+        } else if let Some(state) = lock_or_warn(&ctx.state, "state") {
             // General fallback if no source provided
-            if let Some((inc_type, curr_mod)) = stack_guard.last() {
+            if let Some((inc_type, curr_mod)) = state.module_stack.last() {
                 dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
             }
         }

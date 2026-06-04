@@ -48,8 +48,9 @@ impl ExecutionGraph {
         // 2. Build execution dependencies from the catalog's directed graph edges
         for idx in catalog.graph.node_indices() {
             let id = catalog.graph[idx].id().to_string();
-            
-            let incoming_deps: Vec<String> = catalog.graph
+
+            let incoming_deps: Vec<String> = catalog
+                .graph
                 .edges_directed(idx, petgraph::Direction::Incoming)
                 .map(|edge| catalog.graph[edge.source()].id().to_string())
                 .collect();
@@ -230,8 +231,14 @@ pub async fn execute_transaction(
                     None
                 };
 
-                let report =
-                    process_single_resource(resource, provider, transaction, dry_run, trigger_refresh).await;
+                let report = process_single_resource(
+                    resource,
+                    provider,
+                    transaction,
+                    dry_run,
+                    trigger_refresh,
+                )
+                .await;
                 drop(mutex_guard);
 
                 let _ = tx_clone.send((res_id, report)).await;
@@ -252,17 +259,17 @@ pub async fn execute_transaction(
             on_report(&report);
 
             // Handle triggers if the resource was successfully applied (changed the system)
-            if report.status == ResourceStatus::Applied {
-                if let Some(resource) = graph.resource_map.get(&res_id) {
-                    // Notify targets
-                    for not_id in resource.notify() {
-                        state.triggered_resources.insert(not_id.clone());
-                    }
-                    // Subscribed targets
-                    for (other_id, other_res) in &graph.resource_map {
-                        if other_res.subscribe().contains(&res_id) {
-                            state.triggered_resources.insert(other_id.clone());
-                        }
+            if report.status == ResourceStatus::Applied
+                && let Some(resource) = graph.resource_map.get(&res_id)
+            {
+                // Notify targets
+                for not_id in resource.notify() {
+                    state.triggered_resources.insert(not_id.clone());
+                }
+                // Subscribed targets
+                for (other_id, other_res) in &graph.resource_map {
+                    if other_res.subscribe().contains(&res_id) {
+                        state.triggered_resources.insert(other_id.clone());
                     }
                 }
             }
@@ -350,12 +357,12 @@ async fn process_single_resource(
     }
 
     // 2. If it's an exec with refreshonly but NOT triggered, skip it as Unchanged
-    if let Resource::Exec(ref e) = resource {
-        if e.refreshonly.unwrap_or(false) {
-            return ResourceReport::new(id, ResourceStatus::Unchanged, false)
-                .with_duration(start_time.elapsed())
-                .with_source_context(source_context);
-        }
+    if let Resource::Exec(ref e) = resource
+        && e.refreshonly.unwrap_or(false)
+    {
+        return ResourceReport::new(id, ResourceStatus::Unchanged, false)
+            .with_duration(start_time.elapsed())
+            .with_source_context(source_context);
     }
 
     // 3. Get current state for standard execution

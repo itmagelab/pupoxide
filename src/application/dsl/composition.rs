@@ -2,6 +2,7 @@ use crate::application::engine::{ExecutionContext, InclusionType, ModuleHandle};
 use crate::domain::resource::{MetaKind, MetaResource, Resource};
 use rhai::{Dynamic, Engine, NativeCallContext};
 use std::path::{Component, Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tracing::warn;
 
@@ -19,17 +20,21 @@ fn lock_or_err<'a, T>(
     })
 }
 
-enum InclusionTarget<'a> {
-    Relative(&'a str),
-    Named(&'a str),
+enum InclusionTarget {
+    Relative(String),
+    Named(String),
 }
 
-impl<'a> InclusionTarget<'a> {
-    fn parse(name: &'a str) -> Self {
-        let path = Path::new(name);
+impl FromStr for InclusionTarget {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let path = Path::new(s);
         match path.components().next() {
-            Some(Component::CurDir) | Some(Component::ParentDir) => Self::Relative(name),
-            _ => Self::Named(name),
+            Some(Component::CurDir) | Some(Component::ParentDir) => {
+                Ok(Self::Relative(s.to_string()))
+            }
+            _ => Ok(Self::Named(s.to_string())),
         }
     }
 }
@@ -60,7 +65,7 @@ fn resolve_inclusion_path(
     current_path: &std::path::Path,
     base_path: Option<&std::path::Path>,
 ) -> std::result::Result<PathBuf, Box<rhai::EvalAltResult>> {
-    match InclusionTarget::parse(name) {
+    match name.parse::<InclusionTarget>().unwrap() {
         InclusionTarget::Relative(rel_path) => {
             let mut p = current_path.parent().unwrap_or(current_path).join(rel_path);
             if p.extension().is_none() {
@@ -80,7 +85,7 @@ fn resolve_inclusion_path(
                 ))
             })?;
 
-            Ok(inc_type.resolve_path(bp, named_name))
+            Ok(inc_type.resolve_path(bp, &named_name))
         }
     }
 }
@@ -95,17 +100,16 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
               -> std::result::Result<ModuleHandle, Box<rhai::EvalAltResult>> {
             let exec_ctx = ExecutionContext::get_current();
 
+            let mut state = lock_or_err(&exec_ctx.state, "state")?;
+
             // Check constraints: Roles can only include Profiles
+            if state.current_inclusion_type == Some(InclusionType::Role)
+                && inc_type != InclusionType::Profile
             {
-                let current_type: std::sync::MutexGuard<Option<InclusionType>> =
-                    lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
-                if *current_type == Some(InclusionType::Role) && inc_type != InclusionType::Profile
-                {
-                    return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
-                        "Roles can ONLY include profiles. Technical modules or other roles are not allowed.".into(),
-                        rhai::Position::NONE,
-                    )));
-                }
+                return Err(Box::new(rhai::EvalAltResult::ErrorRuntime(
+                    "Roles can ONLY include profiles. Technical modules or other roles are not allowed.".into(),
+                    rhai::Position::NONE,
+                )));
             }
 
             let handle = ModuleHandle {
@@ -115,25 +119,19 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             };
 
             // Check if already included
-            let mut included: std::sync::MutexGuard<std::collections::HashSet<String>> =
-                lock_or_err(&exec_ctx.included_modules, "included_modules")?;
-            if included.contains(&handle.start_id) {
+            if state.included_modules.contains(&handle.start_id) {
                 return Ok(handle);
             }
-            included.insert(handle.start_id.clone());
-            drop(included);
+            state.included_modules.insert(handle.start_id.clone());
 
             // Get current path and base path for resolution
-            let current_p: std::sync::MutexGuard<PathBuf> =
-                lock_or_err(&exec_ctx.current_path, "current_path")?;
             let base = lock_or_err(&m_path, "module_path")?;
             let full_path = resolve_inclusion_path(
                 inc_type,
                 &name,
-                &current_p,
+                &state.current_path,
                 base.as_ref().map(|p| p.as_path()),
             )?;
-            drop(current_p);
             drop(base);
 
             if !full_path.exists() {
@@ -150,51 +148,33 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
             }
 
             // Track resource count before inclusion
-            let start_node_count = {
-                let catalog: std::sync::MutexGuard<crate::domain::catalog::Catalog> =
-                    lock_or_err(&exec_ctx.catalog, "catalog")?;
-                catalog.graph.node_count()
-            };
+            let start_node_count = state.catalog.graph.node_count();
 
             // Add module start marker
-            {
-                let mut catalog = lock_or_err(&exec_ctx.catalog, "catalog")?;
-                let mut dependencies = Vec::new();
-                if let Ok(stack) = exec_ctx.module_stack.lock()
-                    && let Some((parent_type, parent_name)) = stack.last()
-                {
-                    let dep = format!("{:?}Start[{}]", parent_type, parent_name);
-                    dependencies.push(dep);
-                }
-                catalog.add_resource(Resource::Meta(MetaResource {
-                    id: handle.start_id.clone(),
-                    kind: MetaKind::ModuleStart,
-                    dependencies: dependencies.clone(),
-                }));
-                // Add edges from dependencies
-                for dep in dependencies {
-                    let _ = catalog.add_dependency(&dep, &handle.start_id);
-                }
+            let mut dependencies = Vec::new();
+            if let Some((parent_type, parent_name)) = state.module_stack.last() {
+                let dep = format!("{:?}Start[{}]", parent_type, parent_name);
+                dependencies.push(dep);
+            }
+            state.catalog.add_resource(Resource::Meta(MetaResource {
+                id: handle.start_id.clone(),
+                kind: MetaKind::ModuleStart,
+                dependencies: dependencies.clone(),
+            }));
+            // Add edges from dependencies
+            for dep in dependencies {
+                let _ = state.catalog.add_dependency(&dep, &handle.start_id);
             }
 
             // Push module to stack
-            {
-                let mut stack = lock_or_err(&exec_ctx.module_stack, "module_stack")?;
-                stack.push((inc_type, name.clone()));
-            }
+            state.module_stack.push((inc_type, name.clone()));
 
-            // Save and update inclusion context
-            let old_inclusion_type = {
-                let mut current =
-                    lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
-                (*current).replace(inc_type)
-            };
+            // Save and update inclusion context & current path
+            let old_inclusion_type = state.current_inclusion_type.replace(inc_type);
+            let old_path = std::mem::replace(&mut state.current_path, full_path.clone());
 
-            // Save and update current path
-            let old_path = {
-                let mut current = lock_or_err(&exec_ctx.current_path, "current_path")?;
-                std::mem::replace(&mut *current, full_path.clone())
-            };
+            // Release lock before evaluating file to avoid deadlocks on nested calls
+            drop(state);
 
             // Prepare and execute the included file
             let eval_res = {
@@ -215,59 +195,40 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
                     })
             };
 
-            // Restore inclusion context
-            {
-                let mut current =
-                    lock_or_err(&exec_ctx.current_inclusion_type, "current_inclusion_type")?;
-                *current = old_inclusion_type;
-            }
-
-            // Restore current path
-            {
-                let mut current = lock_or_err(&exec_ctx.current_path, "current_path")?;
-                *current = old_path;
-            }
-
-            // Pop module from stack
-            {
-                let mut stack = lock_or_err(&exec_ctx.module_stack, "module_stack")?;
-                stack.pop();
-            }
+            // Re-acquire lock to restore context, stack, and current path, and add end marker
+            let mut state = lock_or_err(&exec_ctx.state, "state")?;
+            state.current_inclusion_type = old_inclusion_type;
+            state.current_path = old_path;
+            state.module_stack.pop();
 
             // Check if evaluation succeeded
             let _ = eval_res?;
 
             // Add module end marker
-            {
-                let mut catalog = lock_or_err(&exec_ctx.catalog, "catalog")?;
-
-                let mut end_deps = Vec::new();
-
-                let current_count = catalog.graph.node_count();
-                // Collect IDs of resources added between start_node_count and current_count
-                for i in start_node_count..current_count {
-                    let idx = petgraph::graph::NodeIndex::new(i);
-                    if let Some(res) = catalog.graph.node_weight(idx) {
-                        // Skip if it is the start marker (handle.start_id)
-                        if res.id() != handle.start_id {
-                            end_deps.push(res.id().to_string());
-                        }
+            let current_count = state.catalog.graph.node_count();
+            let mut end_deps = Vec::new();
+            for i in start_node_count..current_count {
+                let idx = petgraph::graph::NodeIndex::new(i);
+                if let Some(res) = state.catalog.graph.node_weight(idx) {
+                    // Skip if it is the start marker (handle.start_id)
+                    if res.id() != handle.start_id {
+                        end_deps.push(res.id().to_string());
                     }
                 }
+            }
 
-                if end_deps.is_empty() {
-                    end_deps.push(handle.start_id.clone());
-                }
+            if end_deps.is_empty() {
+                end_deps.push(handle.start_id.clone());
+            }
 
-                catalog.add_resource(Resource::Meta(MetaResource {
-                    id: handle.end_id.clone(),
-                    kind: MetaKind::ModuleEnd,
-                    dependencies: end_deps.clone(),
-                }));
+            state.catalog.add_resource(Resource::Meta(MetaResource {
+                id: handle.end_id.clone(),
+                kind: MetaKind::ModuleEnd,
+                dependencies: end_deps.clone(),
+            }));
 
-                for dep in end_deps {
-                    let _ = catalog.add_dependency(&dep, &handle.end_id);
-                }
+            for dep in end_deps {
+                let _ = state.catalog.add_dependency(&dep, &handle.end_id);
             }
 
             Ok(handle)
