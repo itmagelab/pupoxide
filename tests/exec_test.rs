@@ -19,6 +19,9 @@ async fn test_exec_creates_idempotency() {
             cwd: None,
             environment: None,
             dependencies: Vec::new(),
+            notify: Vec::new(),
+            subscribe: Vec::new(),
+            refreshonly: None,
             source_context: None,
             mutex: None,
         });
@@ -81,6 +84,9 @@ async fn test_exec_unless_condition() {
             cwd: None,
             environment: None,
             dependencies: Vec::new(),
+            notify: Vec::new(),
+            subscribe: Vec::new(),
+            refreshonly: None,
             source_context: None,
             mutex: None,
         });
@@ -116,6 +122,9 @@ async fn test_exec_with_environment() {
             cwd: None,
             environment: Some(env),
             dependencies: Vec::new(),
+            notify: Vec::new(),
+            subscribe: Vec::new(),
+            refreshonly: None,
             source_context: None,
             mutex: None,
         });
@@ -143,6 +152,9 @@ async fn test_exec_with_cwd() {
             cwd: Some(dir.path().to_path_buf()),
             environment: None,
             dependencies: Vec::new(),
+            notify: Vec::new(),
+            subscribe: Vec::new(),
+            refreshonly: None,
             source_context: None,
             mutex: None,
         });
@@ -168,6 +180,9 @@ async fn test_exec_command_failure() {
             cwd: None,
             environment: None,
             dependencies: Vec::new(),
+            notify: Vec::new(),
+            subscribe: Vec::new(),
+            refreshonly: None,
             source_context: None,
             mutex: None,
         });

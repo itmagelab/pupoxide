@@ -28,7 +28,19 @@ impl ResourceProvider for ExecAdapter {
 
     async fn apply(&self, resource: &Resource) -> Result<()> {
         match resource {
-            Resource::Exec(exec) => self.apply_exec(exec).await,
+            Resource::Exec(exec) => {
+                if exec.refreshonly.unwrap_or(false) {
+                    return Ok(());
+                }
+                self.apply_exec(exec).await
+            }
+            _ => Ok(()),
+        }
+    }
+
+    async fn refresh(&self, resource: &Resource) -> Result<()> {
+        match resource {
+            Resource::Exec(exec) => self.execute_command_raw(exec).await,
             _ => Ok(()),
         }
     }
@@ -77,6 +89,10 @@ impl ExecAdapter {
             return Ok(());
         }
 
+        self.execute_command_raw(exec).await
+    }
+
+    async fn execute_command_raw(&self, exec: &ExecResource) -> Result<()> {
         // Build command
         let mut cmd = Command::new("sh");
         cmd.arg("-c").arg(&exec.command);

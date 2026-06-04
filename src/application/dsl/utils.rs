@@ -104,4 +104,12 @@ impl DslUtils {
             .and_then(|v| v.clone().try_cast::<bool>())
             .unwrap_or(default)
     }
+
+    pub fn extract_resource_links(params: &Map, key: &str) -> Vec<String> {
+        let mut links = Vec::new();
+        if let Some(val) = params.get(key) {
+            Self::push_dependency(&mut links, val.clone());
+        }
+        links
+    }
 }

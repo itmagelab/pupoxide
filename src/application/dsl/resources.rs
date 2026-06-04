@@ -37,11 +37,16 @@ pub fn register(engine: &mut Engine) {
             let ensure = DslUtils::extract_ensure(&params);
             let dependencies =
                 DslUtils::extract_dependencies(&params, &exec_ctx, ctx.call_source());
+            let notify = DslUtils::extract_resource_links(&params, "notify");
+            let subscribe = DslUtils::extract_resource_links(&params, "subscribe");
+
             let resource = Resource::Directory(crate::domain::resource::DirectoryResource {
                 id: format!("Directory[{}]", path),
                 path: PathBuf::from(path),
                 ensure,
                 dependencies,
+                notify,
+                subscribe,
                 owner: DslUtils::extract_string(&params, "owner"),
                 group: DslUtils::extract_string(&params, "group"),
                 mode: DslUtils::extract_string(&params, "mode"),
@@ -63,12 +68,17 @@ pub fn register(engine: &mut Engine) {
             let exec_ctx = ExecutionContext::get_current();
             let dependencies =
                 DslUtils::extract_dependencies(&params, &exec_ctx, ctx.call_source());
+            let notify = DslUtils::extract_resource_links(&params, "notify");
+            let subscribe = DslUtils::extract_resource_links(&params, "subscribe");
 
             let creates = DslUtils::extract_string(&params, "creates").map(PathBuf::from);
             let unless = DslUtils::extract_string(&params, "unless");
             let cwd = DslUtils::extract_string(&params, "cwd").map(PathBuf::from);
             let command = DslUtils::extract_string(&params, "command")
                 .unwrap_or_else(|| id_or_command.clone());
+            let refreshonly = params
+                .get("refreshonly")
+                .and_then(|v| v.clone().try_cast::<bool>());
 
             let resource = Resource::Exec(ExecResource {
                 id: format!("Exec[{}]", id_or_command),
@@ -78,6 +88,9 @@ pub fn register(engine: &mut Engine) {
                 cwd,
                 environment: extract_environment(&params),
                 dependencies,
+                notify,
+                subscribe,
+                refreshonly,
                 mutex: DslUtils::extract_string(&params, "mutex"),
                 source_context: exec_ctx.get_source_context(),
             });
@@ -97,6 +110,8 @@ pub fn register(engine: &mut Engine) {
             let ensure = DslUtils::extract_ensure(&params);
             let dependencies =
                 DslUtils::extract_dependencies(&params, &exec_ctx, ctx.call_source());
+            let notify = DslUtils::extract_resource_links(&params, "notify");
+            let subscribe = DslUtils::extract_resource_links(&params, "subscribe");
             let content = DslUtils::extract_string(&params, "content");
 
             let resource = Resource::File(FileResource {
@@ -105,6 +120,8 @@ pub fn register(engine: &mut Engine) {
                 ensure,
                 content,
                 dependencies,
+                notify,
+                subscribe,
                 owner: DslUtils::extract_string(&params, "owner"),
                 group: DslUtils::extract_string(&params, "group"),
                 mode: DslUtils::extract_string(&params, "mode"),

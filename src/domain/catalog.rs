@@ -98,26 +98,49 @@ impl Catalog {
         let mut edges_to_add = Vec::new();
         let mut missing_deps_count = 0;
 
-        debug!("Building graph edges from resource dependencies...");
+        debug!("Building graph edges from resource dependencies, notifies and subscribes...");
 
         for idx in self.graph.node_indices() {
             let resource = &self.graph[idx];
             let resource_id = resource.id().to_string();
 
+            // 1. Standard dependencies (require)
             for dep_id in resource.dependencies() {
                 if let Some(&dep_idx) = self.id_map.get(dep_id) {
-                    // Dependency: resource -> dep (resource depends on dep)
-                    // Edge direction: dep -> resource
-                    // topological sort usually gives order where dep comes BEFORE resource.
-                    // If edge is dep -> resource, then dep comes first.
                     edges_to_add.push((dep_idx, idx));
                 } else {
-                    // Log warning for missing dependency.
-                    // This often happens if dependencies are conditional or external.
                     warn!(
                         resource_id = %resource_id,
                         missing_dependency = %dep_id,
                         "Skipping missing dependency for resource"
+                    );
+                    missing_deps_count += 1;
+                }
+            }
+
+            // 2. Subscribe dependencies (current resource depends on the source)
+            for sub_id in resource.subscribe() {
+                if let Some(&sub_idx) = self.id_map.get(sub_id) {
+                    edges_to_add.push((sub_idx, idx));
+                } else {
+                    warn!(
+                        resource_id = %resource_id,
+                        missing_subscribe = %sub_id,
+                        "Skipping missing subscribe target for resource"
+                    );
+                    missing_deps_count += 1;
+                }
+            }
+
+            // 3. Notify dependencies (target resource depends on the current resource)
+            for not_id in resource.notify() {
+                if let Some(&not_idx) = self.id_map.get(not_id) {
+                    edges_to_add.push((idx, not_idx));
+                } else {
+                    warn!(
+                        resource_id = %resource_id,
+                        missing_notify = %not_id,
+                        "Skipping missing notify target for resource"
                     );
                     missing_deps_count += 1;
                 }

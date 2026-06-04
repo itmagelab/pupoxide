@@ -53,6 +53,12 @@ pub struct FileResource {
     pub content: Option<String>,
     /// List of resource IDs that this resource depends on.
     pub dependencies: Vec<String>,
+    /// List of resource IDs that this resource notifies on change.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notify: Vec<String>,
+    /// List of resource IDs that this resource subscribes to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscribe: Vec<String>,
     /// Target file owner.
     pub owner: Option<String>,
     /// Target file group.
@@ -103,6 +109,14 @@ pub struct ExecResource {
     pub environment: Option<std::collections::HashMap<String, String>>,
     /// List of resource IDs that this resource depends on.
     pub dependencies: Vec<String>,
+    /// List of resource IDs that this resource notifies on change.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notify: Vec<String>,
+    /// List of resource IDs that this resource subscribes to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscribe: Vec<String>,
+    /// Only run when triggered by notification.
+    pub refreshonly: Option<bool>,
     /// Location metadata.
     pub source_context: Option<SourceContext>,
     /// Optional mutex group to serialize execution.
@@ -120,6 +134,12 @@ pub struct DirectoryResource {
     pub ensure: Ensure,
     /// List of resource IDs that this resource depends on.
     pub dependencies: Vec<String>,
+    /// List of resource IDs that this resource notifies on change.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notify: Vec<String>,
+    /// List of resource IDs that this resource subscribes to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscribe: Vec<String>,
     /// Target directory owner.
     pub owner: Option<String>,
     /// Target directory group.
@@ -145,6 +165,12 @@ pub struct PackageResource {
     pub provider: String,
     /// List of resource IDs that this resource depends on.
     pub dependencies: Vec<String>,
+    /// List of resource IDs that this resource notifies on change.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notify: Vec<String>,
+    /// List of resource IDs that this resource subscribes to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscribe: Vec<String>,
     /// Location metadata.
     pub source_context: Option<SourceContext>,
     /// Optional mutex group to serialize execution.
@@ -192,6 +218,28 @@ impl Resource {
         }
     }
 
+    /// Returns the list of resource identifiers this resource notifies.
+    pub fn notify(&self) -> &[String] {
+        match self {
+            Resource::File(f) => &f.notify,
+            Resource::Directory(d) => &d.notify,
+            Resource::Exec(e) => &e.notify,
+            Resource::Package(p) => &p.notify,
+            Resource::Meta(_) => &[],
+        }
+    }
+
+    /// Returns the list of resource identifiers this resource subscribes to.
+    pub fn subscribe(&self) -> &[String] {
+        match self {
+            Resource::File(f) => &f.subscribe,
+            Resource::Directory(d) => &d.subscribe,
+            Resource::Exec(e) => &e.subscribe,
+            Resource::Package(p) => &p.subscribe,
+            Resource::Meta(_) => &[],
+        }
+    }
+
     /// Returns the execution mutex name if defined for this resource.
     pub fn mutex(&self) -> Option<&str> {
         match self {
@@ -234,4 +282,9 @@ pub trait ResourceProvider: Send + Sync {
 
     /// Synchronizes the system to match the resource's desired configuration.
     async fn apply(&self, resource: &Resource) -> Result<()>;
+
+    /// Refreshes/reloads the resource in response to an event trigger.
+    async fn refresh(&self, _resource: &Resource) -> Result<()> {
+        Ok(())
+    }
 }

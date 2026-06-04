@@ -54,4 +54,9 @@ impl ResourceProvider for ProviderRegistry {
         let provider = self.find_provider(resource)?;
         provider.apply(resource).await
     }
+
+    async fn refresh(&self, resource: &Resource) -> Result<()> {
+        let provider = self.find_provider(resource)?;
+        provider.refresh(resource).await
+    }
 }

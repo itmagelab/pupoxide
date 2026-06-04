@@ -23,6 +23,8 @@ pub fn register(engine: &mut Engine) {
             let mutex =
                 DslUtils::extract_string(&params, "mutex").unwrap_or_else(|| provider.clone());
 
+            let notify = DslUtils::extract_resource_links(&params, "notify");
+            let subscribe = DslUtils::extract_resource_links(&params, "subscribe");
             let custom_params = params
                 .get("params")
                 .and_then(|p| rhai::serde::from_dynamic::<serde_json::Value>(p).ok());
@@ -33,6 +35,8 @@ pub fn register(engine: &mut Engine) {
                 ensure,
                 provider,
                 dependencies,
+                notify,
+                subscribe,
                 mutex: Some(mutex),
                 source_context: exec_ctx.get_source_context(),
                 params: custom_params,

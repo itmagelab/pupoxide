@@ -30,22 +30,34 @@ struct ExecutionGraph {
 
 impl ExecutionGraph {
     fn new(catalog: &Catalog) -> Self {
+        use petgraph::visit::EdgeRef;
+
         let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
         let mut pending_deps: HashMap<String, usize> = HashMap::new();
         let mut resource_map: HashMap<String, Resource> = HashMap::new();
         let mut reports_order: Vec<String> = Vec::new();
 
-        let resources = catalog.resources();
-        for resource in &resources {
+        // 1. Populate resource map and order
+        for idx in catalog.graph.node_indices() {
+            let resource = &catalog.graph[idx];
             let id = resource.id().to_string();
             resource_map.insert(id.clone(), resource.clone());
             reports_order.push(id.clone());
+        }
 
-            let deps = resource.dependencies();
-            pending_deps.insert(id.clone(), deps.len());
+        // 2. Build execution dependencies from the catalog's directed graph edges
+        for idx in catalog.graph.node_indices() {
+            let id = catalog.graph[idx].id().to_string();
+            
+            let incoming_deps: Vec<String> = catalog.graph
+                .edges_directed(idx, petgraph::Direction::Incoming)
+                .map(|edge| catalog.graph[edge.source()].id().to_string())
+                .collect();
 
-            for dep in deps {
-                dependents.entry(dep.clone()).or_default().push(id.clone());
+            pending_deps.insert(id.clone(), incoming_deps.len());
+
+            for dep_id in incoming_deps {
+                dependents.entry(dep_id).or_default().push(id.clone());
             }
         }
 
@@ -84,6 +96,7 @@ impl ExecutionGraph {
 struct ExecutionState {
     reports: HashMap<String, ResourceReport>,
     failed_roots: HashSet<String>,
+    triggered_resources: HashSet<String>,
     completed_count: usize,
     running_tasks: usize,
 }
@@ -93,6 +106,7 @@ impl ExecutionState {
         Self {
             reports: HashMap::new(),
             failed_roots: HashSet::new(),
+            triggered_resources: HashSet::new(),
             completed_count: 0,
             running_tasks: 0,
         }
@@ -203,6 +217,7 @@ pub async fn execute_transaction(
             let transaction = Arc::clone(&transaction);
             let mutex_pool = Arc::clone(&mutex_pool);
             let tx_clone = tx.clone();
+            let trigger_refresh = state.triggered_resources.contains(&res_id);
 
             state.running_tasks += 1;
             tokio::spawn(async move {
@@ -216,7 +231,7 @@ pub async fn execute_transaction(
                 };
 
                 let report =
-                    process_single_resource(resource, provider, transaction, dry_run).await;
+                    process_single_resource(resource, provider, transaction, dry_run, trigger_refresh).await;
                 drop(mutex_guard);
 
                 let _ = tx_clone.send((res_id, report)).await;
@@ -235,6 +250,23 @@ pub async fn execute_transaction(
         if let Some((res_id, report)) = rx.recv().await {
             state.running_tasks -= 1;
             on_report(&report);
+
+            // Handle triggers if the resource was successfully applied (changed the system)
+            if report.status == ResourceStatus::Applied {
+                if let Some(resource) = graph.resource_map.get(&res_id) {
+                    // Notify targets
+                    for not_id in resource.notify() {
+                        state.triggered_resources.insert(not_id.clone());
+                    }
+                    // Subscribed targets
+                    for (other_id, other_res) in &graph.resource_map {
+                        if other_res.subscribe().contains(&res_id) {
+                            state.triggered_resources.insert(other_id.clone());
+                        }
+                    }
+                }
+            }
+
             state.record_completion(res_id.clone(), report);
 
             ready_queue.extend(graph.update_dependents(&res_id));
@@ -288,12 +320,45 @@ async fn process_single_resource(
     provider: Arc<dyn ResourceProvider>,
     transaction: Arc<Mutex<crate::domain::transaction::Transaction>>,
     dry_run: bool,
+    trigger_refresh: bool,
 ) -> ResourceReport {
     let start_time = std::time::Instant::now();
     let source_context = get_source_context(&resource);
     let id = resource.id().to_string();
 
-    // 1. Get current state
+    // 1. If triggered by event, call refresh
+    if trigger_refresh {
+        if dry_run {
+            tracing::debug!(id = %id, "Would refresh resource");
+            return ResourceReport::new(id, ResourceStatus::WouldApply, true)
+                .with_duration(start_time.elapsed())
+                .with_source_context(source_context);
+        }
+
+        return match provider.refresh(&resource).await {
+            Err(e) => {
+                tracing::debug!(id = %id, error = %e, "Failed to refresh resource");
+                ResourceReport::new(id, ResourceStatus::Failed, false)
+                    .with_message(e.to_string())
+                    .with_duration(start_time.elapsed())
+                    .with_source_context(source_context)
+            }
+            Ok(_) => ResourceReport::new(id, ResourceStatus::Applied, true)
+                .with_duration(start_time.elapsed())
+                .with_source_context(source_context),
+        };
+    }
+
+    // 2. If it's an exec with refreshonly but NOT triggered, skip it as Unchanged
+    if let Resource::Exec(ref e) = resource {
+        if e.refreshonly.unwrap_or(false) {
+            return ResourceReport::new(id, ResourceStatus::Unchanged, false)
+                .with_duration(start_time.elapsed())
+                .with_source_context(source_context);
+        }
+    }
+
+    // 3. Get current state for standard execution
     let current_state = match provider.get_state(&resource, false).await {
         Ok(s) => s,
         Err(e) => {
