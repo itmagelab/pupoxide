@@ -47,14 +47,14 @@ impl DslUtils {
                 // Try specific source mapping, then fallback to current module stack
                 if let Some(marker_id) = state.source_map.get(src) {
                     dependencies.push(marker_id.clone());
-                } else if let Some((inc_type, curr_mod)) = state.module_stack.last() {
-                    dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
+                } else if let Some(inc) = state.module_stack.last() {
+                    dependencies.push(format!("{:?}Start[{}]", inc.inclusion_type, inc.name));
                 }
             }
         } else if let Some(state) = lock_or_warn(&ctx.state, "state") {
             // General fallback if no source provided
-            if let Some((inc_type, curr_mod)) = state.module_stack.last() {
-                dependencies.push(format!("{:?}Start[{}]", inc_type, curr_mod));
+            if let Some(inc) = state.module_stack.last() {
+                dependencies.push(format!("{:?}Start[{}]", inc.inclusion_type, inc.name));
             }
         }
 

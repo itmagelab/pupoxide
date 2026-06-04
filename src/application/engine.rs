@@ -32,6 +32,15 @@ pub enum InclusionType {
     Profile,
 }
 
+/// Represents an active manifest inclusion during evaluation.
+#[derive(Debug, Clone)]
+pub struct ActiveInclusion {
+    /// Category of the inclusion.
+    pub inclusion_type: InclusionType,
+    /// Logical name of the included resource/file.
+    pub name: String,
+}
+
 /// The mutable state of manifest evaluation, shared within the execution context.
 #[derive(Debug, Clone)]
 pub struct ExecutionState {
@@ -40,13 +49,122 @@ pub struct ExecutionState {
     /// Tracks modules that have already been included to prevent redundant evaluation.
     pub included_modules: HashSet<String>,
     /// Active hierarchical stack of inclusion paths.
-    pub module_stack: Vec<(InclusionType, String)>,
-    /// The currently active inclusion category.
-    pub current_inclusion_type: Option<InclusionType>,
+    pub module_stack: Vec<ActiveInclusion>,
     /// Absolute path of the currently evaluating manifest.
     pub current_path: PathBuf,
     /// Maps Rhai source locations to topological ModuleStart nodes.
     pub source_map: HashMap<String, String>,
+}
+
+impl ExecutionState {
+    /// Returns the currently active inclusion type, if any.
+    pub fn current_inclusion_type(&self) -> Option<InclusionType> {
+        self.module_stack.last().map(|inc| inc.inclusion_type)
+    }
+
+    /// Begins a new manifest inclusion (Module, Role, or Profile).
+    ///
+    /// This method:
+    /// 1. Computes parent dependency links based on the active stack.
+    /// 2. Creates and registers the start marker resource in the catalog.
+    /// 3. Pushes the new inclusion onto the stack.
+    /// 4. Switches the current path to the target manifest file.
+    ///
+    /// Returns the created `ModuleHandle`, the old path (to be restored later),
+    /// and the catalog node count before this inclusion started.
+    pub fn enter_inclusion(
+        &mut self,
+        inc_type: InclusionType,
+        name: String,
+        target_path: PathBuf,
+    ) -> (ModuleHandle, PathBuf, usize) {
+        let handle = ModuleHandle {
+            name: name.clone(),
+            start_id: format!("{:?}Start[{}]", inc_type, name),
+            end_id: format!("{:?}End[{}]", inc_type, name),
+        };
+
+        // 1. Determine dependencies (the parent start marker, if any)
+        let mut dependencies = Vec::new();
+        if let Some(parent) = self.module_stack.last() {
+            dependencies.push(format!("{:?}Start[{}]", parent.inclusion_type, parent.name));
+        }
+
+        // 2. Add start marker to catalog
+        let resource = Resource::Meta(crate::domain::resource::MetaResource {
+            id: handle.start_id.clone(),
+            kind: crate::domain::resource::MetaKind::ModuleStart,
+            dependencies: dependencies.clone(),
+        });
+        self.catalog.add_resource(resource);
+
+        for dep in dependencies {
+            let _ = self.catalog.add_dependency(&dep, &handle.start_id);
+        }
+
+        // 3. Register in source map (especially useful for error/context mapping in standard imports)
+        self.source_map
+            .insert(name.clone(), handle.start_id.clone());
+
+        // 4. Record current node count and push to stack
+        let start_node_count = self.catalog.graph.node_count();
+        self.module_stack.push(ActiveInclusion {
+            inclusion_type: inc_type,
+            name,
+        });
+
+        // 5. Update path
+        let old_path = std::mem::replace(&mut self.current_path, target_path);
+
+        (handle, old_path, start_node_count)
+    }
+
+    /// Finishes the current manifest inclusion.
+    ///
+    /// This method:
+    /// 1. Restores the previous file path.
+    /// 2. Pops the inclusion from the stack.
+    /// 3. Computes dependencies for the end marker (all resources declared during evaluation).
+    /// 4. Creates and registers the end marker resource in the catalog.
+    pub fn exit_inclusion(
+        &mut self,
+        handle: &ModuleHandle,
+        old_path: PathBuf,
+        start_node_count: usize,
+    ) {
+        // 1. Restore path and pop stack
+        self.current_path = old_path;
+        self.module_stack.pop();
+
+        // 2. Gather all resources added during this inclusion's evaluation
+        let current_count = self.catalog.graph.node_count();
+        let mut end_deps = Vec::new();
+        for i in start_node_count..current_count {
+            let idx = petgraph::graph::NodeIndex::new(i);
+            if let Some(res) = self.catalog.graph.node_weight(idx)
+                && res.id() != handle.start_id
+            {
+                end_deps.push(res.id().to_string());
+            }
+        }
+
+        // Fallback to start marker if no resources were added
+        if end_deps.is_empty() {
+            end_deps.push(handle.start_id.clone());
+        }
+
+        // 3. Add end marker to catalog
+        let resource = Resource::Meta(crate::domain::resource::MetaResource {
+            id: handle.end_id.clone(),
+            kind: crate::domain::resource::MetaKind::ModuleEnd,
+            dependencies: end_deps.clone(),
+        });
+        self.catalog.add_resource(resource);
+
+        for dep in end_deps {
+            let _ = self.catalog.add_dependency(&dep, &handle.end_id);
+        }
+    }
 }
 
 /// The runtime context holding current catalog state, module call stacks, and collected facts.
@@ -68,7 +186,6 @@ impl ExecutionContext {
                 catalog: Catalog::new(node_name, environment),
                 included_modules: HashSet::new(),
                 module_stack: Vec::new(),
-                current_inclusion_type: None,
                 current_path: path,
                 source_map: HashMap::new(),
             })),
@@ -97,13 +214,13 @@ impl ExecutionContext {
         let mut context = crate::domain::resource::SourceContext::default();
         let mut modules = Vec::new();
 
-        for (inc_type, name) in state.module_stack.iter() {
-            let mut normalized_name = name.strip_prefix("./").unwrap_or(name);
+        for inc in state.module_stack.iter() {
+            let mut normalized_name = inc.name.strip_prefix("./").unwrap_or(&inc.name);
             normalized_name = normalized_name
                 .strip_suffix(".rhai")
                 .unwrap_or(normalized_name);
 
-            match inc_type {
+            match inc.inclusion_type {
                 InclusionType::Role => context.role = Some(normalized_name.to_string()),
                 InclusionType::Profile => context.profile = Some(normalized_name.to_string()),
                 InclusionType::Module => modules.push(normalized_name.to_string()),
@@ -131,7 +248,7 @@ impl ExecutionContext {
             .map_err(|e| anyhow::anyhow!("Failed to lock state: {}", e))?;
 
         // Enforce role constraints: Resources cannot be added directly in Roles
-        if state.current_inclusion_type == Some(InclusionType::Role)
+        if state.current_inclusion_type() == Some(InclusionType::Role)
             && !matches!(resource, Resource::Meta(_))
         {
             return Err(anyhow::anyhow!(
@@ -331,45 +448,16 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
         let full_path = self.resolve_full_path(path, &exec_ctx, pos)?;
 
         let module_name = path.to_string();
-        let handle = ModuleHandle {
-            name: module_name.clone(),
-            start_id: format!("ModuleStart[{}]", module_name),
-            end_id: format!("ModuleEnd[{}]", module_name),
-        };
 
         // 2. Prepare environment for module execution under a single lock
-        let (start_node_count, old_path) = {
-            let mut state = exec_ctx.state.lock().expect("Failed to lock state");
-
-            let mut dependencies = Vec::new();
-            if let Some((parent_type, parent_name)) = state.module_stack.last() {
-                dependencies.push(format!("{:?}Start[{}]", parent_type, parent_name));
-            }
-
-            let resource = Resource::Meta(crate::domain::resource::MetaResource {
-                id: handle.start_id.clone(),
-                kind: crate::domain::resource::MetaKind::ModuleStart,
-                dependencies: dependencies.clone(),
-            });
-
-            state.catalog.add_resource(resource);
-            for dep in dependencies {
-                let _ = state.catalog.add_dependency(&dep, &handle.start_id);
-            }
-
-            state
-                .source_map
-                .insert(module_name.clone(), handle.start_id.clone());
-
-            let start_node_count = state.catalog.graph.node_count();
-
-            state
-                .module_stack
-                .push((InclusionType::Module, module_name.clone()));
-
-            let old_path = std::mem::replace(&mut state.current_path, full_path.clone());
-
-            (start_node_count, old_path)
+        let (handle, old_path, start_node_count) = {
+            let mut state = exec_ctx.state.lock().map_err(|e| {
+                Box::new(rhai::EvalAltResult::ErrorRuntime(
+                    format!("Failed to lock state: {}", e).into(),
+                    pos,
+                ))
+            })?;
+            state.enter_inclusion(InclusionType::Module, module_name, full_path.clone())
         };
 
         // 3. Compile and execute AST (lock is released)
@@ -392,9 +480,14 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
         let eval_res = engine.eval_ast_with_scope::<Dynamic>(&mut scope, &ast);
 
         // 4. Restore state after execution and add end marker under a single lock
-        let mut state = exec_ctx.state.lock().expect("Failed to lock state");
-        state.current_path = old_path;
-        state.module_stack.pop();
+        let mut state = exec_ctx.state.lock().map_err(|e| {
+            Box::new(rhai::EvalAltResult::ErrorRuntime(
+                format!("Failed to lock state: {}", e).into(),
+                pos,
+            ))
+        })?;
+        state.exit_inclusion(&handle, old_path, start_node_count);
+        drop(state); // explicitly drop to release lock
 
         let _ = eval_res.map_err(|e| {
             Box::new(rhai::EvalAltResult::ErrorRuntime(
@@ -402,34 +495,6 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
                 pos,
             ))
         })?;
-
-        // Create final metadata resource that depends on all resources added in the module
-        let current_count = state.catalog.graph.node_count();
-        let mut end_deps = Vec::new();
-        for i in start_node_count..current_count {
-            let idx = petgraph::graph::NodeIndex::new(i);
-            if let Some(res) = state.catalog.graph.node_weight(idx)
-                && res.id() != handle.start_id
-            {
-                end_deps.push(res.id().to_string());
-            }
-        }
-        if end_deps.is_empty() {
-            end_deps.push(handle.start_id.clone());
-        }
-
-        let resource = Resource::Meta(crate::domain::resource::MetaResource {
-            id: handle.end_id.clone(),
-            kind: crate::domain::resource::MetaKind::ModuleEnd,
-            dependencies: end_deps.clone(),
-        });
-
-        state.catalog.add_resource(resource);
-        for dep in end_deps {
-            let _ = state.catalog.add_dependency(&dep, &handle.end_id);
-        }
-
-        drop(state); // explicitly drop to release lock
 
         // 5. Create Rhai module to return
         let mut module = rhai::Module::eval_ast_as_new(scope, &ast, engine)?;
