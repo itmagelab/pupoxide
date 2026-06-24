@@ -1,11 +1,11 @@
 use crate::domain::Facts;
 use crate::domain::error::Result;
 use serde::{Deserialize, Serialize};
-use yaml_serde::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, warn};
+use yaml_serde::Value;
 
 /// Root configuration schema for the hierarchical stash.
 #[derive(Debug, Clone, Serialize, Deserialize)]

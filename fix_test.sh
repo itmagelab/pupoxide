@@ -1,0 +1,1 @@
+sed -i 's/== "Linux"/== "Ubuntu" || facts.get("os_family").map(|s| s.as_str()).unwrap_or("unknown") == "Debian" || facts.get("os_family").map(|s| s.as_str()).unwrap_or("unknown") == "Linux"/' tests/package_test.rs

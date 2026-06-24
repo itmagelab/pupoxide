@@ -9,7 +9,8 @@ use anyhow::Result;
 /// (e.g., local files, database) to track configuration history and states.
 pub trait StateStore: Send + Sync {
     /// Persists a transaction to the storage.
-    fn save_transaction(&self, transaction: &crate::domain::transaction::Transaction) -> Result<()>;
+    fn save_transaction(&self, transaction: &crate::domain::transaction::Transaction)
+    -> Result<()>;
     /// Loads a specific transaction by its unique identifier.
     fn load_transaction(&self, id: &str) -> Result<crate::domain::transaction::Transaction>;
     /// Loads the most recently applied transaction.
@@ -110,10 +111,7 @@ impl ExecutionState {
         } else if failed_deps.len() == 1 {
             Some(format!("Dependency failed: {}", failed_deps[0]))
         } else {
-            Some(format!(
-                "Dependencies failed: {}",
-                failed_deps.join(", ")
-            ))
+            Some(format!("Dependencies failed: {}", failed_deps.join(", ")))
         }
     }
 
