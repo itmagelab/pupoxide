@@ -397,7 +397,13 @@ impl rhai::ModuleResolver for PupoxideModuleResolver {
         }
         scope.set_value("facts", facts_map);
 
-        let eval_res = engine.eval_ast_with_scope::<Dynamic>(&mut scope, &ast);
+        let eval_res = CURRENT_EXEC_CTX.with(|ctx| {
+            let old_ctx = ctx.borrow().clone();
+            *ctx.borrow_mut() = Some(exec_ctx.clone());
+            let r = engine.eval_ast_with_scope::<Dynamic>(&mut scope, &ast);
+            *ctx.borrow_mut() = old_ctx;
+            r
+        });
 
         // 5. Restore state after execution
         {
@@ -513,7 +519,7 @@ impl PupoxideEngine {
         let eval_res = CURRENT_EXEC_CTX.with(|ctx| {
             *ctx.borrow_mut() = Some(exec_ctx.clone());
             let r = self.engine.eval_ast_with_scope::<Dynamic>(&mut scope, &ast);
-            *ctx.borrow_mut() = None;
+            *ctx.borrow_mut() = Some(exec_ctx.clone());
             r
         });
 

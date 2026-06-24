@@ -184,14 +184,23 @@ pub fn register(engine: &mut Engine, module_path: Arc<Mutex<Option<PathBuf>>>) {
                 }
                 scope.set_value("facts", facts_map);
 
-                ctx.engine()
-                    .eval_file_with_scope::<Dynamic>(&mut scope, full_path)
-                    .map_err(|e| {
-                        Box::new(rhai::EvalAltResult::ErrorRuntime(
-                            format!("Failed to include {:?} '{}': {}", inc_type, name, e).into(),
-                            rhai::Position::NONE,
-                        ))
-                    })
+                // Re-evaluate in the same context to support nested imports correctly
+                crate::application::engine::CURRENT_EXEC_CTX.with(|th_ctx| {
+                    let _old_ctx = th_ctx.borrow().clone();
+                    *th_ctx.borrow_mut() = Some(exec_ctx.clone());
+                    let r = ctx
+                        .engine()
+                        .eval_file_with_scope::<Dynamic>(&mut scope, full_path)
+                        .map_err(|e| {
+                            Box::new(rhai::EvalAltResult::ErrorRuntime(
+                                format!("Failed to include {:?} '{}': {}", inc_type, name, e)
+                                    .into(),
+                                rhai::Position::NONE,
+                            ))
+                        });
+                    *th_ctx.borrow_mut() = Some(exec_ctx.clone());
+                    r
+                })
             };
 
             // Restore inclusion context

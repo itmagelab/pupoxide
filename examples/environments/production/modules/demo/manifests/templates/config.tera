@@ -1,0 +1,10 @@
+server:
+  host: {{ host }}
+  port: {{ port }}
+  os_family: {{ facts.os_family }}
+  arch: {{ facts.arch }}
+
+features:
+{% for feature in features %}
+  - {{ feature }}
+{% endfor %}
