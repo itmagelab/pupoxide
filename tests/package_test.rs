@@ -22,19 +22,40 @@ async fn test_package_resource_compilation() {
             temp_file,
             "localhost".to_string(),
             "local".to_string(),
-            facts,
+            facts.clone(),
         )
         .unwrap();
 
     let resources = catalog.resources();
     assert_eq!(resources.len(), 2);
 
+    let default_provider = if facts
+        .get("os_family")
+        .map(|s| s.as_str())
+        .unwrap_or("unknown")
+        == "Ubuntu"
+        || facts
+            .get("os_family")
+            .map(|s| s.as_str())
+            .unwrap_or("unknown")
+            == "Debian"
+        || facts
+            .get("os_family")
+            .map(|s| s.as_str())
+            .unwrap_or("unknown")
+            == "Linux"
+    {
+        "apt"
+    } else {
+        "brew"
+    };
+
     // Check first package (htop)
     let res1 = resources.first().unwrap();
     if let Resource::Package(pkg) = res1 {
         assert_eq!(pkg.name, "htop");
-        assert_eq!(pkg.provider, "brew"); // Default
-        assert_eq!(pkg.mutex, Some("brew".to_string())); // Auto-mutex
+        assert_eq!(pkg.provider, default_provider); // Default
+        assert_eq!(pkg.mutex, Some(default_provider.to_string())); // Auto-mutex
     } else {
         panic!("Expected PackageResource for htop");
     }

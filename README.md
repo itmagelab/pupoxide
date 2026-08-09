@@ -54,6 +54,15 @@ if facts["os_family"] == "Darwin" {
         only_if: "test -d ~/Library/Caches"
     });
 }
+
+// Tera template rendering for configuration files
+file("/etc/myapp/config.yaml", #{
+    ensure: "present",
+    content: std::template("config.tera", #{
+        port: 8080,
+        enable_ssl: true
+    })
+});
 ```
 
 ---

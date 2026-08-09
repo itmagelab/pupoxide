@@ -13,3 +13,4 @@ file("/tmp/pupoxide/.cacherc", #{
     ensure: "present",
     content: "Global settings"
 });
+include("./template_demo");
